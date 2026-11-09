@@ -28,7 +28,8 @@ Because the code uses ES modules, preview through a server, not by double-clicki
 ### 2. Add officers
 In Firestore, create a collection named `officers`. For each officer, add a document whose
 **Document ID is their Google email, in lowercase** (for example `jane@utexas.edu`). It needs at least one field,
-such as `name`. Anyone listed can add, edit and delete content. Everyone else signed in can only read.
+such as `name`. Anyone listed can add, edit and delete content, and can approve new members from the **People** tab.
+This list is the only place officers are defined. The website cannot change it.
 
 ### 3. Customize `js/config.js`
 Org name, brand color, teams (match your Slack committees), Drive/Trello/Slack links, form URLs,
@@ -74,12 +75,36 @@ only touches files it created itself) and remove the browsing feature.
 ## Direct messages
 Messages are stored in Firestore. Only the two people in a conversation can read it through the site (enforced by
 `firestore.rules`, so re-publish the rules after updating). They are **not end-to-end encrypted**, and anyone with
-admin access to your Firebase project can see them. Use Slack or email for anything sensitive. People show up in
-the "New message" list after they've signed in once.
+admin access to your Firebase project can see them. Use Slack or email for anything sensitive. Only approved members and officers appear in
+the "New message" list.
 
-## Privacy note
-You chose "any Google account" sign-in, so anyone with a Google account can sign in and read the dashboard.
-Keep sensitive things (receipts, personal contact info, private Docs) out of it. Google Docs keep their own
-sharing settings, so a note's link still only opens for people who have access to that Doc. To restrict
-reading to approved people, change the `read` rules in `firestore.rules` to require `isOfficer()` or a
-`members` collection, as with officers.
+## Text alerts
+People can add a US mobile number under **Profile** (or on the "waiting for approval" screen) and tick an
+unchecked consent box. The exact wording lives in `js/config.js` (`sms.disclosure`) and is saved with each person's
+consent, along with the time they agreed. Officers see the opted-in list in the **People** tab and can download a CSV.
+
+**This site cannot send texts.** Sending needs a texting service. Upload the CSV to it (for example Twilio or a
+campus-friendly tool like GroupMe or Remind).
+
+**Legal reality check (not legal advice):**
+- A checkbox helps but isn't the whole thing. US rules (TCPA, plus carrier rules) expect clear wording that names the
+  org, says messages are recurring, mentions message and data rates, explains STOP and HELP, and keeps a record of consent.
+  The default wording and saved records are built to cover that, but have your org advisor or UT's student org office look at it.
+- Don't pre-check the box, don't make texts a condition of joining, and don't text anyone who hasn't opted in.
+- **Honor STOP right away.** Your texting service handles STOP replies on its side. Click **Mark STOP** here too so the
+  list stays accurate, and delete those numbers from the service.
+- Sending marketing-style texts from a normal US number needs carrier registration (10DLC) with most services,
+  and that usually costs a little each month. Personal-phone group texts and apps like GroupMe avoid that.
+- Re-publish `firestore.rules` after updating the site.
+
+## Who can do what
+- **Anyone** can sign in with Google. A brand-new person is **pending**: they see only a "Waiting for approval"
+  screen and can read nothing.
+- **Members** are approved by officers in the **People** tab (Approve / Decline / Remove). Members can read
+  everything and send DMs.
+- **Officers** are the fixed list in the `officers` collection (added in the Firebase console only). They can edit
+  content and approve members. The first officer has to be added in the console, since nobody can approve themselves.
+
+Re-publish `firestore.rules` after updating the site, or approvals won't take effect.
+
+Google Docs and Drive keep their own sharing settings, so a note's link only opens for people with access to that Doc.

@@ -2,30 +2,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Three tiers:
+    //   pending  = signed in with Google but not approved yet. Can only record their own sign-up request.
+    //   member   = has a document in /members (an officer approved them).
+    //   officer  = has a document in /officers. Added ONLY in the Firebase console, never from the website.
+    // Document IDs are the person's Google email in lowercase.
+
     function signedIn() {
       return request.auth != null && request.auth.token.email_verified == true;
     }
-    // Officers are documents in the "officers" collection, with the email as the document ID.
     function isOfficer() {
       return signedIn() &&
         exists(/databases/$(database)/documents/officers/$(request.auth.token.email));
     }
+    function isMember() {
+      return isOfficer() ||
+        (signedIn() && exists(/databases/$(database)/documents/members/$(request.auth.token.email)));
+    }
 
-    // Each person may only check whether THEIR OWN email is listed. Add officers in the Firebase console.
+    // Officer list: can't be edited from the site. Members can read it (for the DM directory).
+    // Anyone signed in can read their OWN document, which is how the site works out your role.
     match /officers/{email} {
-      allow read: if signedIn() && request.auth.token.email == email;
+      allow read: if signedIn() && (request.auth.token.email == email || isMember());
       allow write: if false;
     }
 
-    match /users/{email} {
-      allow read: if signedIn();
-      allow write: if signedIn() && request.auth.token.email == email;
+    // Approved members: only officers can add or remove. A person can read their own document.
+    match /members/{email} {
+      allow read: if isMember() || (signedIn() && request.auth.token.email == email);
+      allow write: if isOfficer();
     }
 
-    // Direct messages: only the two participants can read; you can only send as yourself; no edits.
+    // Sign-up requests: you can write only your own. Officers can read everyone's and clear requests.
+    match /users/{email} {
+      allow read: if signedIn() && (request.auth.token.email == email || isOfficer());
+      allow create, update: if signedIn() && request.auth.token.email == email
+        && request.resource.data.keys().hasOnly(['email', 'name']);
+      allow delete: if isOfficer();
+    }
+
+    // Direct messages: members only, only the two participants can read, you can only send as yourself.
     match /messages/{id} {
-      allow read: if signedIn() && request.auth.token.email in resource.data.participants;
-      allow create: if signedIn()
+      allow read: if isMember() && request.auth.token.email in resource.data.participants;
+      allow create: if isMember()
         && request.resource.data.from == request.auth.token.email
         && request.resource.data.participants.size() == 2
         && request.auth.token.email in request.resource.data.participants
@@ -34,8 +53,22 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    match /announcements/{id} { allow read: if signedIn(); allow write: if isOfficer(); }
-    match /projects/{id}      { allow read: if signedIn(); allow write: if isOfficer(); }
-    match /notes/{id}         { allow read: if signedIn(); allow write: if isOfficer(); }
+    // Text-alert consent records. Each person writes only their own (US numbers only). Officers can read all
+    // and can mark someone as opted out (for example after a STOP reply), but cannot change anyone's number.
+    match /smsConsent/{email} {
+      allow read: if signedIn() && (request.auth.token.email == email || isOfficer());
+      allow create, update: if signedIn() && request.auth.token.email == email
+        && request.resource.data.keys().hasOnly(['email', 'name', 'phone', 'consent', 'disclosure', 'consentedAt', 'optedOutAt', 'created'])
+        && request.resource.data.phone is string
+        && request.resource.data.phone.matches('^[+]1[0-9]{10}$');
+      allow update: if isOfficer()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['consent', 'optedOutAt']);
+      allow delete: if signedIn() && request.auth.token.email == email;
+    }
+
+    // Content: members read, officers edit.
+    match /announcements/{id} { allow read: if isMember(); allow write: if isOfficer(); }
+    match /projects/{id}      { allow read: if isMember(); allow write: if isOfficer(); }
+    match /notes/{id}         { allow read: if isMember(); allow write: if isOfficer(); }
   }
 }
