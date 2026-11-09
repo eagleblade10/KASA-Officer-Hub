@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Org Hub</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" id="brand" href="index.html"></a>
+  <nav></nav>
+  <a class="btn pri" href="app.html" id="enter">Member sign in</a>
+</div></header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1 id="name"></h1>
+    <p id="tag"></p>
+    <a class="btn pri" href="app.html">Sign in with Google</a>
+    <a class="btn" id="join" href="#">Join the org</a>
+  </section>
+  <div class="grid cols-2">
+    <div class="card"><h2>About us</h2><p id="about"></p></div>
+    <div class="card"><h2>Meetings</h2><p id="meet"></p></div>
+  </div>
+  <h2 style="margin-top:24px">Our teams</h2>
+  <div class="grid cols-3" id="teams"></div>
+</main>
+
+<script type="module">
+  import { CONFIG as C } from "./js/config.js";
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  document.documentElement.style.setProperty("--accent", C.accent);
+  document.documentElement.style.setProperty("--red", C.accent2);
+  document.title = C.orgName;
+  const $ = id => document.getElementById(id);
+  $("brand").textContent = C.orgName; $("name").textContent = C.orgName; $("tag").textContent = C.tagline;
+  $("about").textContent = C.about; $("meet").textContent = C.meetingInfo; $("join").href = C.joinUrl;
+  $("teams").innerHTML =C.teams.map(t => `<div class="card"><span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span><p class="muted">${esc(t.desc)}</p></div>`).join("");
+</script>
+</body>
+</html>

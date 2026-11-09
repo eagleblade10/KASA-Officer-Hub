@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    // Officers are documents in the "officers" collection, with the email as the document ID.
+    function isOfficer() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/officers/$(request.auth.token.email));
+    }
+
+    // Each person may only check whether THEIR OWN email is listed. Add officers in the Firebase console.
+    match /officers/{email} {
+      allow read: if signedIn() && request.auth.token.email == email;
+      allow write: if false;
+    }
+
+    match /users/{email} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.token.email == email;
+    }
+
+    // Direct messages: only the two participants can read; you can only send as yourself; no edits.
+    match /messages/{id} {
+      allow read: if signedIn() && request.auth.token.email in resource.data.participants;
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.token.email
+        && request.resource.data.participants.size() == 2
+        && request.auth.token.email in request.resource.data.participants
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000;
+      allow update, delete: if false;
+    }
+
+    match /announcements/{id} { allow read: if signedIn(); allow write: if isOfficer(); }
+    match /projects/{id}      { allow read: if signedIn(); allow write: if isOfficer(); }
+    match /notes/{id}         { allow read: if signedIn(); allow write: if isOfficer(); }
+  }
+}
