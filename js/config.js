@@ -12,10 +12,10 @@ export const CONFIG = {
 
   // Firebase (see README step 1). Leave as-is to preview the site in DEMO mode.
   firebase: {
-    apiKey: "PASTE_API_KEY",
-    authDomain: "PASTE_PROJECT.firebaseapp.com",
-    projectId: "PASTE_PROJECT_ID",
-    appId: "PASTE_APP_ID",
+    apiKey: "AIzaSyAv0z8W9VbXlha-vMvAvJH_AT-LxpwfeD0",
+    authDomain: "kasa-officer-hub.firebaseapp.com",
+    projectId: "kasa-officer-hub",
+    appId: "1:558420239913:web:d8930405aa79892ca59e38",
   },
 
   // Google Calendar: Settings > your calendar > "Integrate calendar" > Calendar ID
