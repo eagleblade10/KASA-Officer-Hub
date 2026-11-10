@@ -23,19 +23,23 @@ const mem = {
   projects: [
     { id: "p1", name: "Fall Showcase", owner: "events", needsFrom: ["media", "finance"], due: iso(30), trello: "", drive: "", done: [0] },
     { id: "p2", name: "Recruitment Week", owner: "outreach", needsFrom: ["media"], due: iso(12), trello: "", drive: "", done: [] },
+    { id: "p3", name: "General meetings", owner: "events", needsFrom: [], due: "", links: [{ name: "Agenda template", url: "#" }], done: [] },
+    { id: "p4", name: "General meeting: Nov 4", owner: "events", parent: "p3", needsFrom: [], due: iso(-5), links: [{ name: "Slides", url: "#" }], done: [] },
+    { id: "p5", name: "General meeting: Nov 18", owner: "events", parent: "p3", needsFrom: [], due: iso(9), links: [], done: [] },
   ],
   users: [ // sign-up requests
     { id: "sam@utexas.edu", email: "sam@utexas.edu", name: "Sam (demo)" },
     { id: "alex@utexas.edu", email: "alex@utexas.edu", name: "Alex (demo)" },
   ],
   members: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)" }],
+  links: [],
   smsConsent: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() }],
   officers: [{ id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" }],
   messages: [
     { id: "m1", from: "jane@utexas.edu", to: "demo@example.com", participants: ["jane@utexas.edu", "demo@example.com"], text: "Hey! Can Media cover the showcase on the 21st?", created: Date.now() - 3600e3 },
   ],
   notes: [
-    { id: "n1", title: "General meeting", date: iso(-3), team: "all", project: "", url: "#" },
+    { id: "n1", title: "General meeting", date: iso(-3), team: "all", project: "p4", url: "#" },
     { id: "n2", title: "Media sync", date: iso(-8), team: "media", project: "p1", url: "#" },
   ],
 };
@@ -102,6 +106,9 @@ export async function driveToken() {
   if (auth.currentUser?.email) p.setCustomParameters({ login_hint: auth.currentUser.email });
   const r = await A.signInWithPopup(auth, p);
   return A.GoogleAuthProvider.credentialFromResult(r)?.accessToken || null;
+}
+export async function idToken() {
+  return configured ? auth.currentUser.getIdToken() : null;
 }
 export async function signOutUser() {
   if (configured) await A.signOut(auth);

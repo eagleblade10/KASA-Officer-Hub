@@ -6,7 +6,8 @@ A dashboard for your student org, hosted free on GitHub Pages.
 - **Member dashboard** (`app.html`) behind Google sign-in.
 - **Home:** the next 14 days of checkpoints, announcements, latest notes, request forms.
 - **Teams:** one page per Slack committee, with its links and **asks from other teams**.
-- **Projects:** checkpoints auto-generated from the due date (6, 4, 2, 1 weeks, then day-of).
+- **Projects:** checkpoints auto-generated from the due date (6, 4, 2, 1 weeks, then day-of). Projects can hold
+  **sub-projects** (for example "General meetings" with one per meeting), each with its own links and meeting notes.
 - **Meeting notes:** searchable index that links out to your Google Docs.
 - **Messages:** direct messages between signed-in members.
 - **Drive:** browse, search, preview, create, rename and trash files in your shared Drive folder.
@@ -50,7 +51,34 @@ Calendar ID, and the checkpoint schedule.
 - Mark which teams a project **needs help from**, and it shows up on their team page.
 - Post pinned **announcements** for things that keep getting lost in Slack.
 
-## Google Drive tab (extra setup)
+## Slack channels that update themselves
+The **Channels** tab lists your workspace's public channels, so new ones appear without editing anything. A website
+can't safely hold a Slack token, so a tiny free "Cloudflare Worker" holds it instead. Only approved members get an answer.
+
+1. **Create a Slack app:** go to https://api.slack.com/apps > **Create New App > From scratch**, name it, pick your workspace.
+2. **OAuth & Permissions > Bot Token Scopes > Add** `channels:read`. Then click **Install to Workspace**
+   (a workspace admin may need to approve it). Copy the **Bot User OAuth Token** (starts with `xoxb-`).
+3. **Cloudflare:** make a free account at cloudflare.com, then **Workers & Pages > Create > Create Worker**, name it, **Deploy**,
+   then **Edit code**, paste in everything from `worker/slack-channels.js`, and **Deploy** again.
+4. In the Worker: **Settings > Variables and secrets > Add**:
+   - `SLACK_BOT_TOKEN` (type **Secret**) = the xoxb- token
+   - `FIREBASE_API_KEY` = your Firebase apiKey, `FIREBASE_PROJECT_ID` = your projectId
+   - `ALLOWED_ORIGIN` = `https://YOURUSERNAME.github.io` (no path, no trailing slash)
+5. Copy the Worker's URL (like `https://name.you.workers.dev`) into `slack: { endpoint: "..." }` in `js/config.js`.
+
+**Never paste the xoxb- token into GitHub, `config.js`, or chat.** Only into the Cloudflare secret.
+Each team page also shows channels whose names contain the team's id or name (e.g. `media` matches `media-requests`).
+Private channels aren't listed.
+
+## Drive tab
+`driveMode` in `js/config.js` has two settings:
+- **`"embed"` (default):** shows your Drive folder inside the page. No extra permissions and **no "unverified app"
+  warning**. Members see what their own Google account can already open. Share the folder with them in Drive.
+- **`"oauth"`:** the full tab (create, rename, trash, "log as meeting note"). Google shows an **"unverified app"** warning
+  because full Drive access is a sensitive permission, and removing it needs Google's formal app verification (not
+  realistic for a student org). Members can click **Advanced > Go to app** to continue. Use the setup steps below only for this mode.
+
+### Extra setup for `oauth` mode
 The Drive tab lets signed-in members work with files in your org's Drive folder from the site. Each person only
 sees and changes what their own Google account can already access, so **share your org folder with your members**
 in Drive. Editing text happens in Google Docs/Sheets (the site opens them), and "Trash" is recoverable for 30 days.
@@ -96,6 +124,21 @@ campus-friendly tool like GroupMe or Remind).
 - Sending marketing-style texts from a normal US number needs carrier registration (10DLC) with most services,
   and that usually costs a little each month. Personal-phone group texts and apps like GroupMe avoid that.
 - Re-publish `firestore.rules` after updating the site.
+
+## Private links (Trello invites, etc.)
+`js/config.js` is a **public file**: anyone on the internet can open it, even without signing in. Don't put anything
+in it that you wouldn't post publicly. Trello invite links in particular let anyone who has them join the board.
+Instead, officers click **+ Add link** under Quick links on the Home tab. Those are stored in the database and only
+approved members can see them. Use `config.js` only for links that are fine to be public (form links, for example).
+
+## Spam and abuse checklist
+- Nobody can read anything until an officer approves them, and pending people can only write their own sign-up and text-consent records.
+- Officers can't be created from the website, only in the Firebase console.
+- Messages are capped at 2,000 characters and names at 100; phone numbers must be valid US numbers.
+- Decline on the People tab clears a request. If someone keeps re-requesting, just ignore them.
+- **Turn on a budget alert** in Google Cloud (Billing > Budgets & alerts, for example $1) so a flood of traffic can't surprise you.
+  The free tier covers a student org easily.
+- Keep GitHub repo write access to a few trusted officers.
 
 ## Who can do what
 - **Anyone** can sign in with Google. A brand-new person is **pending**: they see only a "Waiting for approval"

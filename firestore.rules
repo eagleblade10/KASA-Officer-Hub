@@ -37,7 +37,8 @@ service cloud.firestore {
     match /users/{email} {
       allow read: if signedIn() && (request.auth.token.email == email || isOfficer());
       allow create, update: if signedIn() && request.auth.token.email == email
-        && request.resource.data.keys().hasOnly(['email', 'name']);
+        && request.resource.data.keys().hasOnly(['email', 'name'])
+        && (!('name' in request.resource.data) || request.resource.data.name.size() <= 100);
       allow delete: if isOfficer();
     }
 
@@ -67,6 +68,7 @@ service cloud.firestore {
     }
 
     // Content: members read, officers edit.
+    match /links/{id}         { allow read: if isMember(); allow write: if isOfficer(); }
     match /announcements/{id} { allow read: if isMember(); allow write: if isOfficer(); }
     match /projects/{id}      { allow read: if isMember(); allow write: if isOfficer(); }
     match /notes/{id}         { allow read: if isMember(); allow write: if isOfficer(); }
