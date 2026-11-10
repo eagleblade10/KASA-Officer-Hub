@@ -24,7 +24,7 @@ export const CONFIG = {
 
   // Google Drive folder the Drive tab opens to. Open the folder in Drive and copy the ID
   // from the URL (drive.google.com/drive/folders/THIS_PART). Leave "" to start at "My Drive".
-  driveRootId: "",
+  driveRootId: "https://drive.google.com/drive/folders/100vEo3hWdNF4T64wwOf_MRSJL15DxsA5?usp=drive_link",
   // "embed" (default): shows your Drive folder inside the page. No extra permissions, no Google warning screen.
   // "oauth": full Drive tab (create/rename/trash), but Google shows an "unverified app" warning. See README.
   driveMode: "embed",
