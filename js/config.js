@@ -19,7 +19,7 @@ export const CONFIG = {
   },
 
   // Google Calendar: Settings > your calendar > "Integrate calendar" > Calendar ID
-  calendarId: "", // e.g. "abc123@group.calendar.google.com"
+  calendarId: "kasautaustin@gmail.com", // e.g. "abc123@group.calendar.google.com"
   calendarTimezone: "America/Chicago",
 
   // Google Drive folder the Drive tab opens to. Open the folder in Drive and copy the ID
