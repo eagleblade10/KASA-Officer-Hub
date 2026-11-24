@@ -54,7 +54,7 @@ export const CONFIG = {
 
   // Slack channel list that updates itself. Deploy worker/slack-channels.js (README), then paste its URL here.
   // Leave "" to hide the Channels tab.
-  slack: { endpoint: "" },
+  slack: { endpoint: "https://kasa-hub-slack.eagleblade10.workers.dev" },
 
   orgLinks: [
     { name: "Shared Drive (root)", url: "#" },
