@@ -19,41 +19,22 @@ export const CONFIG = {
   },
 
   // Google Calendar: Settings > your calendar > "Integrate calendar" > Calendar ID
+  calendarId: "kasautaustin@gmail.com", // e.g. "abc123@group.calendar.google.com"
   calendarId: "", // e.g. "abc123@group.calendar.google.com"
   calendarTimezone: "America/Chicago",
 
   // Google Drive folder the Drive tab opens to. Open the folder in Drive and copy the ID
   // from the URL (drive.google.com/drive/folders/THIS_PART). Leave "" to start at "My Drive".
+  driveRootId: "https://drive.google.com/drive/folders/100vEo3hWdNF4T64wwOf_MRSJL15DxsA5?usp=drive_link",
   driveRootId: "",
   // "embed" (default): shows your Drive folder inside the page. No extra permissions, no Google warning screen.
   // "oauth": full Drive tab (create/rename/trash), but Google shows an "unverified app" warning. See README.
   driveMode: "embed",
-
-  // Match these to your Slack committees. Paste the links you already use.
-  teams: [
-    { id: "media",   name: "Media",   color: "#10204a", desc: "Photo, video, graphics, social.", slack: "#", drive: "#", trello: "#" },
-    { id: "finance", name: "Finance", color: "#8b2a33", desc: "Budget, refunds, funding.",       slack: "#", drive: "#", trello: "#" },
-    { id: "events",  name: "Events",  color: "#2f6b4f", desc: "Planning and logistics.",         slack: "#", drive: "#", trello: "#" },
-    { id: "outreach",name: "Outreach",color: "#111111", desc: "Recruitment and partners.",       slack: "#", drive: "#", trello: "#" },
-  ],
-
-  // Org-wide links shown on the Requests page and dashboard.
-  forms: [
-    { name: "Media request", desc: "Need photos, video, or graphics? Submit at least 2 weeks ahead.", url: "https://forms.gle/hbWE6E37GNH7X7zGA", embed: "" },
-    { name: "Event proposal", desc: "Planning an event? Make your own copy of the proposal template, fill it in, and share it with the officers.", url: "https://docs.google.com/document/d/1LyyWxaIROciFyLrj3A7SsvSA0KqvW9rcIMV8TB8NNfk/copy", embed: "" },
-    { name: "Reimbursement request", desc: "Attach receipts. Finance reviews weekly.", url: "https://forms.gle/ANRJmWjTmnt9YDmk8", embed: "" },
-  ],
-  turnaround: "Media: ~5 business days. Refunds: reviewed every Friday.",
-
-  // Text alerts: people can add a phone number and tick a consent box. The exact wording below is saved with
-  // each person's consent. Have an officer (or your advisor) read it, and edit it to match how you really text.
-  sms: {
-    enabled: true,
-    disclosure: "I agree to receive recurring text messages from {org} about meetings, events, and deadlines at this number. Consent is not required to join. Message frequency varies. Message and data rates may apply. Reply STOP to cancel or HELP for help.",
-  },
+@@ -54,21 +54,21 @@
 
   // Slack channel list that updates itself. Deploy worker/slack-channels.js (README), then paste its URL here.
   // Leave "" to hide the Channels tab.
+  slack: { endpoint: "https://kasa-slack.eagleblade10.workers.dev" },
   slack: { endpoint: "" },
 
   orgLinks: [
