@@ -57,9 +57,9 @@ export const CONFIG = {
   slack: { endpoint: "https://kasa-slack.eagleblade10.workers.dev" },
 
   orgLinks: [
-    { name: "Shared Drive (root)", url: "#" },
-    { name: "Slack workspace",     url: "#" },
-    { name: "Main Trello board",   url: "#" },
+    { name: "Shared Drive (root)", url: "https://drive.google.com/drive/u/2/folders/100vEo3hWdNF4T64wwOf_MRSJL15DxsA5" },
+    { name: "Slack workspace",     url: "https://app.slack.com/client/T0B4717TPME" },
+    { name: "Main Trello board",   url: "https://trello.com/b/15KAtUzc/kasa" },
   ],
 
   // Project checkpoints, counted back from the project's due date.
