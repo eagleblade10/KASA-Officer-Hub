@@ -23,17 +23,23 @@ const mem = {
   projects: [
     { id: "p1", name: "Fall Showcase", owner: "events", needsFrom: ["media", "finance"], due: iso(30), trello: "", drive: "", done: [0] },
     { id: "p2", name: "Recruitment Week", owner: "outreach", needsFrom: ["media"], due: iso(12), trello: "", drive: "", done: [] },
+    { id: "p3", name: "General meetings", owner: "events", needsFrom: [], due: "", links: [{ name: "Agenda template", url: "#" }], done: [] },
+    { id: "p4", name: "General meeting: Nov 4", owner: "events", parent: "p3", needsFrom: [], due: iso(-5), links: [{ name: "Slides", url: "#" }], done: [] },
+    { id: "p5", name: "General meeting: Nov 18", owner: "events", parent: "p3", needsFrom: [], due: iso(9), links: [], done: [] },
   ],
-  users: [
-    { email: "demo@example.com", name: "Demo Officer" },
-    { email: "jane@utexas.edu", name: "Jane (demo)" },
-    { email: "sam@utexas.edu", name: "Sam (demo)" },
+  users: [ // sign-up requests
+    { id: "sam@utexas.edu", email: "sam@utexas.edu", name: "Sam (demo)" },
+    { id: "alex@utexas.edu", email: "alex@utexas.edu", name: "Alex (demo)" },
   ],
+  members: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)" }],
+  links: [],
+  smsConsent: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() }],
+  officers: [{ id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" }],
   messages: [
     { id: "m1", from: "jane@utexas.edu", to: "demo@example.com", participants: ["jane@utexas.edu", "demo@example.com"], text: "Hey! Can Media cover the showcase on the 21st?", created: Date.now() - 3600e3 },
   ],
   notes: [
-    { id: "n1", title: "General meeting", date: iso(-3), team: "all", project: "", url: "#" },
+    { id: "n1", title: "General meeting", date: iso(-3), team: "all", project: "p4", url: "#" },
     { id: "n2", title: "Media sync", date: iso(-8), team: "media", project: "p1", url: "#" },
   ],
 };
@@ -53,6 +59,17 @@ export async function addItem(c, data) {
 export async function updateItem(c, id, data) {
   if (configured) return F.updateDoc(F.doc(db, c, id), data);
   Object.assign(mem[c].find((i) => i.id === id), data);
+  emit(c);
+}
+export async function getItem(c, id) {
+  if (!configured) return mem[c]?.find((i) => i.id === id) || null;
+  const s = await F.getDoc(F.doc(db, c, id));
+  return s.exists() ? { id, ...s.data() } : null;
+}
+export async function setItem(c, id, data) {
+  if (configured) return F.setDoc(F.doc(db, c, id), { ...data, created: F.serverTimestamp() });
+  mem[c] = mem[c].filter((i) => i.id !== id);
+  mem[c].push({ id, ...data, created: Date.now() });
   emit(c);
 }
 export async function removeItem(c, id) {
@@ -90,8 +107,20 @@ export async function driveToken() {
   const r = await A.signInWithPopup(auth, p);
   return A.GoogleAuthProvider.credentialFromResult(r)?.accessToken || null;
 }
+export async function idToken() {
+  return configured ? auth.currentUser.getIdToken() : null;
+}
 export async function signOutUser() {
   if (configured) await A.signOut(auth);
+}
+// "officer" | "member" | "pending". Demo mode: add ?as=pending to the URL to preview the waiting screen.
+export async function getRole(user) {
+  if (!configured) return new URLSearchParams(location.search).get("as") || "officer";
+  const email = user.email.toLowerCase();
+  for (const [c, role] of [["officers", "officer"], ["members", "member"]]) {
+    try { if ((await F.getDoc(F.doc(db, c, email))).exists()) return role; } catch {}
+  }
+  return "pending";
 }
 export async function isOfficer(user) {
   if (!configured) return true;

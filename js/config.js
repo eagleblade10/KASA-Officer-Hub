@@ -19,12 +19,12 @@ export const CONFIG = {
   },
 
   // Google Calendar: Settings > your calendar > "Integrate calendar" > Calendar ID
-  calendarId: "kasautaustin@gmail.com", // e.g. "abc123@group.calendar.google.com"
+  calendarId: "", // e.g. "abc123@group.calendar.google.com"
   calendarTimezone: "America/Chicago",
 
   // Google Drive folder the Drive tab opens to. Open the folder in Drive and copy the ID
   // from the URL (drive.google.com/drive/folders/THIS_PART). Leave "" to start at "My Drive".
-  driveRootId: "https://drive.google.com/drive/folders/100vEo3hWdNF4T64wwOf_MRSJL15DxsA5?usp=drive_link",
+  driveRootId: "",
   // "embed" (default): shows your Drive folder inside the page. No extra permissions, no Google warning screen.
   // "oauth": full Drive tab (create/rename/trash), but Google shows an "unverified app" warning. See README.
   driveMode: "embed",
@@ -54,7 +54,7 @@ export const CONFIG = {
 
   // Slack channel list that updates itself. Deploy worker/slack-channels.js (README), then paste its URL here.
   // Leave "" to hide the Channels tab.
-  slack: { endpoint: "https://kasa-slack.eagleblade10.workers.dev" },
+  slack: { endpoint: "" },
 
   orgLinks: [
     { name: "Shared Drive (root)", url: "#" },

@@ -51,24 +51,42 @@ Calendar ID, and the checkpoint schedule.
 - Mark which teams a project **needs help from**, and it shows up on their team page.
 - Post pinned **announcements** for things that keep getting lost in Slack.
 
-## Slack channels that update themselves
-The **Channels** tab lists your workspace's public channels, so new ones appear without editing anything. A website
-can't safely hold a Slack token, so a tiny free "Cloudflare Worker" holds it instead. Only approved members get an answer.
+## Slack: channels and officer access
+Your Slack workspace is officers-only, so the hub can use it two ways:
+- **Channels tab (officers only):** lists every public channel plus the private channels *that officer* is in. New
+  channels show up on their own. Members never see it.
+- **Slack sets officers automatically:** when someone signs in, the hub checks whether their email belongs to an active
+  person in your Slack workspace. If so, they become an officer. If they later leave the workspace, the Slack-made
+  officer status is removed (at their next sign-in, and by a daily cleanup). Guests, bots and deactivated accounts never count.
+  Officers you add by hand in Firebase are never removed by Slack. Members (people not in Slack) are still approved by
+  officers in the **People** tab.
 
-1. **Create a Slack app:** go to https://api.slack.com/apps > **Create New App > From scratch**, name it, pick your workspace.
-2. **OAuth & Permissions > Bot Token Scopes > Add** `channels:read`. Then click **Install to Workspace**
-   (a workspace admin may need to approve it). Copy the **Bot User OAuth Token** (starts with `xoxb-`).
-3. **Cloudflare:** make a free account at cloudflare.com, then **Workers & Pages > Create > Create Worker**, name it, **Deploy**,
-   then **Edit code**, paste in everything from `worker/slack-channels.js`, and **Deploy** again.
-4. In the Worker: **Settings > Variables and secrets > Add**:
-   - `SLACK_BOT_TOKEN` (type **Secret**) = the xoxb- token
-   - `FIREBASE_API_KEY` = your Firebase apiKey, `FIREBASE_PROJECT_ID` = your projectId
-   - `ALLOWED_ORIGIN` = `https://YOURUSERNAME.github.io` (no path, no trailing slash)
-5. Copy the Worker's URL (like `https://name.you.workers.dev`) into `slack: { endpoint: "..." }` in `js/config.js`.
+**Important:** everyone in the Slack workspace becomes an officer, which includes approving members, editing content and
+seeing the text-alert list. Keep Slack limited to people you'd trust with that. The person's **Slack email must match the
+Google account they sign in to the hub with**; if it doesn't, they won't be recognized (add them by hand instead).
 
-**Never paste the xoxb- token into GitHub, `config.js`, or chat.** Only into the Cloudflare secret.
-Each team page also shows channels whose names contain the team's id or name (e.g. `media` matches `media-requests`).
-Private channels aren't listed.
+A website can't safely hold Slack or Firebase admin keys, so a small free Cloudflare Worker (`worker/slack-channels.js`) does it.
+
+**1. Slack app permissions.** At api.slack.com/apps, open your app > **OAuth & Permissions > Bot Token Scopes** and make sure you have:
+`channels:read`, `groups:read`, `users:read`, `users:read.email`. Then click **Reinstall to Workspace** (copy the
+`xoxb-` token again if it changed). For private channels to show up, **invite the app into each private channel**
+(in the channel, type `/invite @YourAppName`). The app only sees private channels it has been added to.
+
+**2. Firebase service account key** (lets the Worker add and remove officers). In the Firebase console go to the gear >
+**Project settings > Service accounts > Generate new private key**. A `.json` file downloads. Keep it private.
+
+**3. Worker settings** (Cloudflare Worker > Settings > Variables and secrets). Re-paste `worker/slack-channels.js` and Deploy, then add:
+- `SLACK_BOT_TOKEN` (**Secret**): the `xoxb-` token
+- `FIREBASE_SERVICE_ACCOUNT` (**Secret**): open the downloaded `.json` file in a text editor and paste **the entire contents**
+- `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `ALLOWED_ORIGIN` (Text), as before
+
+**4. Daily cleanup.** In the Worker: **Settings > Triggers > Cron Triggers > Add**, and use `0 9 * * *` (once a day). Free.
+
+**5.** Paste the Worker's URL into `slack: { endpoint: "..." }` in `js/config.js` (the base address, without `/sync`).
+
+**Never put the `xoxb-` token or the service-account file in GitHub, `config.js`, or chat.** The service account is a master
+key to your Firebase project. If it ever leaks, delete it under Project settings > Service accounts and make a new one.
+If you skip step 2 and the cron, the Channels tab still works, but Slack won't set officers automatically.
 
 ## Drive tab
 `driveMode` in `js/config.js` has two settings:
