@@ -33,7 +33,10 @@ const mem = {
   ],
   members: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)" }],
   links: [],
-  smsConsent: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() }],
+  smsConsent: [
+    { id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
+    { id: "stranger@example.com", email: "stranger@example.com", name: "Not approved (demo)", phone: "+15125550000", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
+  ],
   officers: [{ id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" }],
   messages: [
     { id: "m1", from: "jane@utexas.edu", to: "demo@example.com", participants: ["jane@utexas.edu", "demo@example.com"], text: "Hey! Can Media cover the showcase on the 21st?", created: Date.now() - 3600e3 },
@@ -46,8 +49,10 @@ const mem = {
 const subs = {};
 const emit = (c) => (subs[c] || []).forEach((f) => f([...mem[c]]));
 
+const fail = (c, e) => { console.error(c, e); window.dispatchEvent(new CustomEvent("watch-error", { detail: c })); };
+
 export function watch(c, cb) {
-  if (configured) return F.onSnapshot(F.collection(db, c), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+  if (configured) return F.onSnapshot(F.collection(db, c), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => fail(c, e));
   (subs[c] = subs[c] || []).push(cb);
   cb([...mem[c]]);
 }
@@ -83,7 +88,7 @@ export async function upsertUser(user) {
   await F.setDoc(F.doc(db, "users", user.email.toLowerCase()), { email: user.email.toLowerCase(), name: user.displayName || user.email }, { merge: true });
 }
 export function watchDMs(email, cb) {
-  if (configured) return F.onSnapshot(F.query(F.collection(db, "messages"), F.where("participants", "array-contains", email)), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+  if (configured) return F.onSnapshot(F.query(F.collection(db, "messages"), F.where("participants", "array-contains", email)), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => fail("messages", e));
   const f = (l) => cb(l.filter((m) => m.participants.includes(email)));
   (subs.messages = subs.messages || []).push(f);
   f([...mem.messages]);
@@ -113,14 +118,15 @@ export async function idToken() {
 export async function signOutUser() {
   if (configured) await A.signOut(auth);
 }
-// "officer" | "member" | "pending". Demo mode: add ?as=pending to the URL to preview the waiting screen.
+// "officer" | "member" | "pending" | "error". Demo mode: add ?as=pending (or member, error) to the URL to preview.
 export async function getRole(user) {
   if (!configured) return new URLSearchParams(location.search).get("as") || "officer";
   const email = user.email.toLowerCase();
+  let failed = false;
   for (const [c, role] of [["officers", "officer"], ["members", "member"]]) {
-    try { if ((await F.getDoc(F.doc(db, c, email))).exists()) return role; } catch {}
+    try { if ((await F.getDoc(F.doc(db, c, email))).exists()) return role; } catch { failed = true; }
   }
-  return "pending";
+  return failed ? "error" : "pending"; // a failed read is not the same as "not approved"
 }
 export async function isOfficer(user) {
   if (!configured) return true;

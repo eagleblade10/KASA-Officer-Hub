@@ -311,11 +311,16 @@ function viewProfile() {
   return `<h1>Profile</h1><div class="card"><strong>${esc(state.user.displayName || "")}</strong><div class="muted">${esc(state.user.email)} · ${state.officer ? "officer" : "member"}</div></div>
   ${C.sms?.enabled ? `<div class="card" id="smscard" style="margin-top:16px">${smsInner()}</div>` : ""}`;
 }
+// Only approved people count: anyone can type someone else's number, and nothing here can prove who owns it.
+const optIns = () => {
+  const ok = new Set([...state.members, ...state.officers].map((d) => d.id));
+  return state.smsList.filter((x) => x.consent && ok.has(x.id)).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+};
 function smsListCard() {
   if (!C.sms?.enabled) return "";
-  const on = state.smsList.filter((x) => x.consent).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const on = optIns();
   return `<div class="card"><h2>Text alerts list <span class="badge">${on.length}</span></h2>
-  <p class="muted">People who opted in. Each has a saved record of when they agreed and the exact wording they saw.</p>
+  <p class="muted">Approved people who ticked the opt-in box, each with a saved record of when and what they agreed to. We can't check who owns a number, so have your texting service send a confirmation text ("Reply YES") before the first real message.</p>
   ${on.length ? `<ul class="list" style="max-height:260px;overflow:auto">${on.map((x) => `<li><div class="row"><span><strong>${esc(x.name || x.id)}</strong> <span class="muted">${esc(x.phone)}</span></span><button class="btn sm del" data-a="sms-optout" data-id="${esc(x.id)}">Mark STOP</button></div></li>`).join("")}</ul>` : `<p class="empty">No one has opted in yet.</p>`}
   <button class="btn sm" data-a="sms-csv">Download CSV</button> <button class="btn sm" data-a="sms-copy">Copy numbers</button>
   <p class="muted">This site can't send texts itself. Upload the list to your texting service. If someone replies STOP, click "Mark STOP" here too so they drop off the list.</p></div>`;
@@ -326,7 +331,7 @@ async function smsAction(a, b) {
     if (a === "sms-stop") { if (!confirm("Turn off text alerts?")) return; await fb.updateItem("smsConsent", me(), { consent: false, optedOutAt: stamp }); state.sms = { ...state.sms, consent: false, optedOutAt: stamp }; refreshSms(); }
     else if (a === "sms-optout") { if (confirm("Mark this person as opted out of texts?")) await fb.updateItem("smsConsent", b.dataset.id, { consent: false, optedOutAt: stamp }); }
     else {
-      const on = state.smsList.filter((x) => x.consent);
+      const on = optIns();
       if (a === "sms-copy") { await navigator.clipboard.writeText(on.map((x) => x.phone).join("\n")); alert(on.length + " numbers copied."); }
       if (a === "sms-csv") {
         const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
@@ -470,6 +475,15 @@ document.addEventListener("click", async (e) => {
 });
 window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
 
+// A list that can't load (rules not published, access removed) used to just look empty. Say so at the top of the page.
+const failed = new Set();
+window.addEventListener("watch-error", (e) => {
+  failed.add(e.detail);
+  const el = $("#demo");
+  el.hidden = false;
+  el.textContent = `Couldn't load: ${[...failed].join(", ")}. Check your connection, and make sure the latest firestore.rules are published in Firebase.`;
+});
+
 // ---------- boot ----------
 fb.onAuth(async (user) => {
   if (!user) {
@@ -480,9 +494,17 @@ fb.onAuth(async (user) => {
   state.user = user;
   fb.upsertUser(user).catch(() => {});
   if (fb.configured && C.slack?.endpoint) { // Slack membership decides officer status; if this fails, nothing changes
-    try { await fetch(C.slack.endpoint.replace(/\/$/, "") + "/sync", { method: "POST", headers: { Authorization: "Bearer " + (await fb.idToken()) } }); } catch {}
+    try { await fetch(C.slack.endpoint.replace(/\/$/, "") + "/sync", { method: "POST", headers: { Authorization: "Bearer " + (await fb.idToken()) }, signal: AbortSignal.timeout(8000) }); } catch {} // 8s cap so a slow Slack can't freeze sign-in
   }
   const role = await fb.getRole(user);
+  if (role === "error") { // the check itself failed, which is not the same as "not approved"
+    state.pending = true; // stops the normal page from drawing
+    $("#nav").innerHTML = ""; $("#who").innerHTML = "";
+    $("#view").innerHTML = `<div class="hero"><h1>Couldn't check your access</h1><p>Check your connection and try again. If it keeps happening, tell an officer. The latest rules may not be published yet.</p><button class="btn pri" id="chk">Try again</button> <button class="btn" id="so">Sign out</button></div>`;
+    $("#chk").onclick = () => location.reload();
+    $("#so").onclick = async () => { await fb.signOutUser(); location.href = "index.html"; };
+    return;
+  }
   try { state.sms = await fb.getItem("smsConsent", user.email.toLowerCase()); } catch { state.sms = null; }
   if (role === "pending") {
     state.pending = true;
