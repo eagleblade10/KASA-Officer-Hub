@@ -129,6 +129,10 @@ People can add a US mobile number under **Profile** (or on the "waiting for appr
 unchecked consent box. The exact wording lives in `js/config.js` (`sms.disclosure`) and is saved with each person's
 consent, along with the time they agreed. Officers see the opted-in list in the **People** tab and can download a CSV.
 
+**The site can't verify who owns a number.** Anyone could type someone else's number, so the officer list and CSV
+only include people an officer has approved, and you should still **send a confirmation text ("Reply YES to confirm")
+from your texting service before the first real message**. Only text people who reply YES.
+
 **This site cannot send texts.** Sending needs a texting service. Upload the CSV to it (for example Twilio or a
 campus-friendly tool like GroupMe or Remind).
 
