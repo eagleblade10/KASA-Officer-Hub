@@ -16,6 +16,14 @@ if (configured) {
 
 // ---------- DEMO mode (no Firebase yet): in-memory sample data ----------
 const iso = (d) => { const x = new Date(); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
+// Demo only: ?title=...&lvl=junior&team=events&perm=dates,roster lets you try the officer levels. Default: the president.
+const q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+const demoOfficers = [
+  { id: "demo@example.com", email: "demo@example.com", name: "Demo Officer", title: q.has("title") ? q.get("title") : "President", ...(q.get("lvl") ? { level: q.get("lvl") } : {}), team: q.get("team") || "" },
+  { id: "console@example.com", email: "console@example.com", name: "Added in Firebase (demo)" },
+  { id: "slack.person@example.com", email: "slack.person@example.com", name: "Slack Person", source: "slack", level: "junior", team: "media" },
+  { id: "casey@example.com", email: "casey@example.com", name: "Casey (hub-made junior)", source: "hub", title: "Associate", level: "junior", team: "events" },
+];
 const mem = {
   announcements: [
     { id: "a1", title: "Officers: welcome to the hub", body: "This is demo data. Connect Firebase (README) to make it real.", audience: "officers", pinned: true, created: Date.now() },
@@ -49,7 +57,9 @@ const mem = {
     { id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
     { id: "stranger@example.com", email: "stranger@example.com", name: "Not approved (demo)", phone: "+15125550000", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
   ],
-  officers: [{ id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" }, { id: "console@example.com", email: "console@example.com", name: "Added in Firebase (demo)" }],
+  officers: demoOfficers,
+  teamPerms: q.get("perm") ? [{ id: q.get("team") || "events", editProjects: q.get("perm").includes("dates"), manageTeam: q.get("perm").includes("roster") }] : [],
+  blockedOfficers: [],
   messages: [
     { id: "m1", from: "jane@utexas.edu", to: "demo@example.com", participants: ["jane@utexas.edu", "demo@example.com"], text: "Hey! Can Media cover the showcase on the 21st?", created: Date.now() - 3600e3 },
   ],

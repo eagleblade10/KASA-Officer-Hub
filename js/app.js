@@ -6,7 +6,7 @@ import { applySettings } from "./settings.js";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const url = (u) => (/^https?:\/\//i.test(u || "") ? esc(u) : "#");
-const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], publicLinks: [], publicNotes: [], pages: [], pubDoc: null, setDoc: null, mirrored: false, preview: false, canPreview: false, slack: null, slackErr: "", slackLoading: false };
+const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], publicLinks: [], publicNotes: [], pages: [], pubDoc: null, setDoc: null, teamPerms: {}, blocked: [], mirrored: false, preview: false, canPreview: false, slack: null, slackErr: "", slackLoading: false };
 const team = (id) => C.teams.find((t) => t.id === id);
 const chip = (id) => { const t = team(id); return t ? `<span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span>` : id === "all" ? `<span class="chip">All org</span>` : ""; };
 
@@ -130,6 +130,7 @@ function viewTeams(id) {
     <div class="card"><h2>Asks from other teams</h2><p class="muted">Projects that need something from ${esc(t.name)}.</p>${asks.length ? `<ul class="list">${asks.map((p) => { const nx = checkpoints(p).find((c) => !c.done); return `<li><strong>${esc(p.name)}</strong> ${chip(p.owner)}<div class="muted">${nx ? `${esc(nx.label)} · <span class="due ${cls(daysFrom(nx.date))}">${rel(daysFrom(nx.date))}</span>` : "All checkpoints done"}</div></li>`; }).join("")}</ul>` : `<p class="empty">No open asks.</p>`}</div>
     <div class="card"><h2>${esc(t.name)} projects</h2>${own.length ? `<ul class="list">${own.map((p) => `<li><strong>${esc(p.name)}</strong> <span class="muted">${p.due ? "due " + fmt(parse(p.due)) + " · " + progress(p) + "%" : "folder"}</span></li>`).join("")}</ul>` : `<p class="empty">None yet.</p>`}</div>
     ${teamChannels(t)}
+    ${teamRosterCards(t)}
     <div class="card"><h2>Meeting notes</h2>${notes.length ? `<ul class="list">${notes.map(noteLi).join("")}</ul>` : `<p class="empty">None yet.</p>`}</div>
   </div>`;
 }
@@ -161,15 +162,15 @@ const projLinks = (p) => [
 const peopleOpts = () => [...state.users].sort((a, b) => a.name.localeCompare(b.name)).map((u) => ({ value: u.email, label: u.name }));
 const personChip = (e) => `<span class="chip" style="--c:#10204a">${esc(nameOf(e))}</span>`;
 const assignedLine = (p) => `<div>${p.owner ? `Team ${chip(p.owner)}` : ""} ${(p.needsFrom || []).length ? `<span class="muted">with</span> ${p.needsFrom.map(chip).join("")}` : ""} ${(p.assignees || []).length ? `<span class="muted">People</span> ${p.assignees.map(personChip).join("")}` : ""}</div>`;
-const projectFields = (p = {}) => [
+const projectFields = (p = {}, withDate = true) => [
   { name: "name", label: "Name", required: true, value: p.name },
   { name: "description", label: "Description", type: "textarea", rows: 4, value: p.description },
   { name: "owner", label: "Lead team", type: "select", options: teamOpts(), value: p.owner },
   { name: "needsFrom", label: "Other teams involved", type: "checks", options: teamOpts(), value: p.needsFrom },
   { name: "assignees", label: "People assigned", type: "checks", scroll: true, options: peopleOpts(), value: p.assignees },
-  { name: "due", label: "Due / event date (optional; a date on a top-level project adds automatic checkpoints)", type: "date", value: p.due },
+  ...(withDate ? [{ name: "due", label: "Due / event date (optional; a date on a top-level project adds automatic checkpoints)", type: "date", value: p.due }] : []),
 ];
-const cpRows = (p) => checkpoints(p).map((c) => `<div class="cp ${c.done ? "done" : ""}"><input type="checkbox" style="width:auto" ${c.done ? "checked" : ""} ${state.officer ? "" : "disabled"} data-a="tog" data-id="${esc(p.id)}" data-i="${c.i}"><span>${esc(c.label)} <span class="muted">· ${fmt(c.date)}</span></span></div>`).join("");
+const cpRows = (p) => checkpoints(p).map((c) => `<div class="cp ${c.done ? "done" : ""}"><input type="checkbox" style="width:auto" ${c.done ? "checked" : ""} ${canDates(p) ? "" : "disabled"} data-a="tog" data-id="${esc(p.id)}" data-i="${c.i}"><span>${esc(c.label)} <span class="muted">· ${fmt(c.date)}</span></span></div>`).join("");
 
 function projCard(p) {
   const n = p.due ? daysFrom(parse(p.due)) : null, subs = state.projects.filter((x) => x.parent === p.id).length, tracked = checkpoints(p).length > 0;
@@ -213,7 +214,7 @@ function viewProject(id) {
    <div class="card"><div class="row"><h2>Meeting notes</h2>${officerBtn("+ Notes", "proj-addnote", x)}</div>
     ${notes.length ? `<ul class="list">${notes.map(noteLi).join("")}</ul>` : `<p class="empty">No notes linked yet.</p>`}</div>
   </div>
-  ${state.officer ? `<p style="margin-top:16px"><button class="btn sm del" data-a="proj-del" ${x}>Delete this ${p.parent ? "sub-project" : "project"} and everything inside it</button></p>` : ""}`;
+  ${isSenior() ? `<p style="margin-top:16px"><button class="btn sm del" data-a="proj-del" ${x}>Delete this ${p.parent ? "sub-project" : "project"} and everything inside it</button></p>` : ""}`;
 }
 
 async function projAction(a, b) {
@@ -221,7 +222,7 @@ async function projAction(a, b) {
   if (!p) return;
   try {
     if (a === "proj-addsub") openForm("New sub-project", projectFields({ owner: p.owner }), (v) => fb.addItem("projects", { ...v, parent: p.id, links: [], done: [] }));
-    else if (a === "proj-edit") openForm("Edit project", projectFields(p), (v) => fb.updateItem("projects", p.id, v));
+    else if (a === "proj-edit") openForm("Edit project", projectFields(p, canDates(p)), (v) => fb.updateItem("projects", p.id, v));
     else if (a === "proj-addlink") openForm("Add a link", [{ name: "name", label: "Label", required: true, ph: "Agenda doc" }, { name: "url", label: "URL", type: "url", required: true }], (v) => fb.updateItem("projects", p.id, { links: [...(p.links || []), v] }));
     else if (a === "proj-addnote") openForm("Add meeting notes", noteFields({ project: p.id }), saveNote());
     else if (a === "proj-rmlink") {
@@ -363,6 +364,32 @@ function rebuildDir() {
   state.users = dedupe(state.officers).map((d) => ({ email: key(d.id), name: d.name || names.get(key(d.id)) || d.id }));
 }
 // "Jane Doe jane@utexas.edu", "jane@utexas.edu" or "Jane <jane@utexas.edu>", one per line. Returns valid people and the lines it couldn't read.
+// ---------- Officer levels ----------
+// Senior officers have full access. Junior officers can do only what the senior officers of their team allow
+// (set on the team's page). The officer titled "President" decides everyone's title, level and team, and who is an officer.
+// No level set = senior, so officers from before levels existed keep full access. (The database rules enforce all of this.)
+const DEFAULT_TITLES = ["President", "Vice President", "Treasurer", "Secretary", "Director", "Associate"];
+const titles = () => { const t = C.officerTitles?.length ? C.officerTitles : DEFAULT_TITLES; return t.includes("President") ? t : ["President", ...t]; };
+const myOfficer = () => state.officers.find((o) => key(o.id) === me());
+const isPresident = () => state.officer && myOfficer()?.title === "President";
+const isSenior = () => state.officer && (isPresident() || myOfficer()?.level !== "junior");
+const isJunior = () => state.officer && !isSenior();
+const myTeam = () => myOfficer()?.team || "";
+const manages = (team) => isPresident() || (isSenior() && (myTeam() === "" || myTeam() === team)); // president, or a senior officer of this team (or of no single team)
+const juniorCan = (perm, team) => isJunior() && !!team && myTeam() === team && !!state.teamPerms[team]?.[perm];
+const canDates = (p) => isSenior() || juniorCan("editProjects", p.owner); // edit a project's dates and checkpoints
+const canRoster = (team) => manages(team) || juniorCan("manageTeam", team); // add officers to a team
+
+const LEVELS = [{ value: "senior", label: "Senior officer (full access)" }, { value: "junior", label: "Junior officer (only what their team's senior officers allow)" }];
+const teamSelectOpts = () => [{ value: "", label: "Whole organization (no single team)" }, ...C.teams.map((t) => ({ value: t.id, label: t.name }))];
+const titleOpts = (cur) => [{ value: "", label: "(no role)" }, ...[...new Set([...titles(), ...(cur ? [cur] : [])])].map((t) => ({ value: t, label: t }))];
+const officerFields = (o = {}, isSelf = false, defLevel = "senior") => [
+  { name: "title", label: "Role", type: "select", value: o.title || "", options: titleOpts(o.title) },
+  ...(isSelf ? [] : [{ name: "level", label: "Level", type: "select", value: o.level || defLevel, options: LEVELS }]),
+  { name: "team", label: "Team / department", type: "select", value: o.team || "", options: teamSelectOpts() },
+];
+
+// "Jane Doe jane@utexas.edu", "jane@utexas.edu" or "Jane <jane@utexas.edu>", one per line. Returns valid people and the lines it couldn't read.
 const parsePeople = (text) => {
   const ok = [], bad = [];
   for (const line of text.split(/[\n;]+/)) {
@@ -374,10 +401,11 @@ const parsePeople = (text) => {
   }
   return { ok, bad };
 };
-const OFFICER_WARNING = "Officers can edit everything, approve people, and see the text-alert phone list. Make this an officer?";
+const SENIOR_WARNING = "A senior officer can edit almost everything, approve people, and see the text-alert phone list. Make them a senior officer?";
 
 function viewPeople() {
-  if (!state.officer) return `<p class="empty">Officers only.</p>`;
+  if (!isSenior()) return `<p class="empty">Senior officers only.</p>`;
+  const pres = isPresident();
   const uniq = dedupe; // same email in different capitals = one person
   const offs = uniq(state.officers), mems = uniq(state.members);
   const have = new Set([...offs, ...mems].map((d) => key(d.id))), offIds = new Set(offs.map((o) => key(o.id)));
@@ -386,47 +414,103 @@ function viewPeople() {
   const members = mems.filter((m) => !offIds.has(key(m.id))).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   const who = (d, n) => `<span><strong>${esc(n || d.name || d.id)}</strong><div class="muted">${esc(d.id)}</div></span>`;
   const src = (o) => o.source === "slack" ? ' <span class="chip" style="--c:#10204a">via Slack</span>' : o.source === "hub" ? ' <span class="chip" style="--c:#2f6b4f">added here</span>' : ' <span class="chip" style="--c:#555">set in Firebase</span>';
-  return `<div class="row"><h1>People</h1><span>${officerBtn("+ Add officers", "ppl-add", 'data-role="officer"')} ${officerBtn("+ Add members", "ppl-add", 'data-role="member"')}</span></div>
-  <p class="muted">Add people by email so they skip the waiting line, or approve people who signed in on their own. <strong>Members</strong> see the member home page, calendar and profile. <strong>Officers</strong> see everything.</p>
+  const sel = (o, f, opts, v, dis) => `<select data-off="${esc(o.id)}" data-f="${f}" ${dis ? "disabled" : ""} aria-label="${f}" style="width:auto;padding:4px 8px;font-size:.85rem">${opts.map((x) => `<option value="${esc(x.value)}" ${x.value === v ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select>`;
+  const lv = (o) => (o.level === "junior" ? "junior" : "senior");
+  const offRow = (o) => {
+    const self = key(o.id) === me(), label = o.name || names.get(key(o.id)) || o.id;
+    // Only the president gets dropdowns. Everyone else sees the same information as plain labels.
+    const controls = pres
+      ? `<span style="display:flex;gap:6px;flex-wrap:wrap">${sel(o, "title", titleOpts(o.title), o.title || "", false)}${sel(o, "level", [{ value: "senior", label: "Senior" }, { value: "junior", label: "Junior" }], lv(o), self)}${sel(o, "team", teamSelectOpts().map((x) => ({ ...x, label: x.value ? x.label : "Whole org" })), o.team || "", false)}</span>`
+      : `<span>${o.title ? `<span class="chip" style="--c:#555">${esc(o.title)}</span>` : ""}<span class="chip" style="--c:${lv(o) === "junior" ? "#8b2a33" : "#10204a"}">${lv(o)}</span>${o.team ? chip(o.team) : ""}</span>`;
+    const btns = pres && !self ? `<span><button class="btn sm" data-a="ppl-demote" data-id="${esc(o.id)}" data-n="${esc(label)}">Make member</button> <button class="btn sm del" data-a="ppl-rm-officer" data-id="${esc(o.id)}">Remove</button></span>` : "";
+    return `<li><div class="row"><span><strong>${esc(label)}</strong>${src(o)}<div class="muted">${esc(o.id)}</div></span>${controls}${btns}</div></li>`;
+  };
+  const blockedCard = pres ? `<div class="card"><h2>Removed from Slack sync <span class="badge">${state.blocked.length}</span></h2><p class="muted">Officers you removed who are still in Slack. They won't be added back automatically.</p>${state.blocked.length ? `<ul class="list">${state.blocked.map((x) => `<li><div class="row"><span><strong>${esc(x.name || x.id)}</strong><div class="muted">${esc(x.id)}</div></span><button class="btn sm" data-a="ppl-unblock" data-id="${esc(x.id)}">Allow again</button></div></li>`).join("")}</ul>` : `<p class="empty">No one.</p>`}</div>` : "";
+  const noPres = !offs.some((o) => o.title === "President");
+  return `<div class="row"><h1>People</h1><span>${pres ? officerBtn("+ Add officers", "ppl-add", 'data-role="officer"') : ""} ${officerBtn("+ Add members", "ppl-add", 'data-role="member"')}</span></div>
+  ${noPres ? `<div class="banner">No one has the <strong>President</strong> role yet. Until someone does, nobody can add or remove officers or change their role, level or team. Once, in the Firebase console, open Firestore &gt; <code>officers</code> &gt; the president's email &gt; add a field <code>title</code> with the text <code>President</code>. After that it all happens here.</div>` : ""}
+  <p class="muted">Add people by email so they skip the waiting line, or approve people who signed in on their own. <strong>Members</strong> see the member home page, calendar and profile. <strong>Officers</strong> see everything, and only the <strong>President</strong> can add officers or change an officer's role, level or team.</p>
   <div class="grid cols-2">
    <div class="card"><h2>Waiting for approval <span class="badge">${pending.length}</span></h2>
-    ${pending.length ? `<ul class="list">${pending.map((u) => `<li><div class="row">${who(u)}<span><button class="btn pri sm" data-a="ppl-approve" data-id="${esc(u.id)}" data-n="${esc(u.name || "")}">Member</button> <button class="btn sm" data-a="ppl-approve-officer" data-id="${esc(u.id)}" data-n="${esc(u.name || "")}">Officer</button> <button class="btn sm del" data-a="ppl-decline" data-id="${esc(u.id)}">Decline</button></span></div></li>`).join("")}</ul>` : `<p class="empty">No one is waiting.</p>`}
+    ${pending.length ? `<ul class="list">${pending.map((u) => `<li><div class="row">${who(u)}<span><button class="btn pri sm" data-a="ppl-approve" data-id="${esc(u.id)}" data-n="${esc(u.name || "")}">Member</button> ${pres ? `<button class="btn sm" data-a="ppl-approve-officer" data-id="${esc(u.id)}" data-n="${esc(u.name || "")}">Officer</button> ` : ""}<button class="btn sm del" data-a="ppl-decline" data-id="${esc(u.id)}">Decline</button></span></div></li>`).join("")}</ul>` : `<p class="empty">No one is waiting.</p>`}
     <p class="muted">Decline just clears the request. They'll reappear if they sign in again.</p></div>
    <div class="card"><h2>Members <span class="badge">${members.length}</span></h2>
-    ${members.length ? `<ul class="list">${members.map((m) => `<li><div class="row">${who(m)}<span><button class="btn sm" data-a="ppl-promote" data-id="${esc(m.id)}" data-n="${esc(m.name || "")}">Make officer</button> <button class="btn sm del" data-a="ppl-remove" data-id="${esc(m.id)}">Remove</button></span></div></li>`).join("")}</ul>` : `<p class="empty">No members yet.</p>`}</div>
+    ${members.length ? `<ul class="list">${members.map((m) => `<li><div class="row">${who(m)}<span>${pres ? `<button class="btn sm" data-a="ppl-promote" data-id="${esc(m.id)}" data-n="${esc(m.name || "")}">Make officer</button> ` : ""}<button class="btn sm del" data-a="ppl-remove" data-id="${esc(m.id)}">Remove</button></span></div></li>`).join("")}</ul>` : `<p class="empty">No members yet.</p>`}</div>
    ${smsListCard()}
-   <div class="card"><h2>Officers <span class="badge">${offs.length}</span></h2><ul class="list">${offs.map((o) => `<li><div class="row"><span><strong>${esc(o.name || names.get(key(o.id)) || o.id)}</strong>${src(o)}<div class="muted">${esc(o.id)}</div></span>${o.source !== "slack" && key(o.id) !== me() ? `<span><button class="btn sm" data-a="ppl-demote" data-id="${esc(o.id)}" data-n="${esc(o.name || "")}">Make member</button> <button class="btn sm del" data-a="ppl-rm-officer" data-id="${esc(o.id)}">Remove</button></span>` : ""}</div></li>`).join("")}</ul>
-    <p class="muted">Officers come from your Slack workspace (once Slack sync is set up), from people you add here, and from anyone added by hand in Firebase. Slack officers are managed in Slack; you can change the rest here (not yourself).</p></div>
+   <div class="card"><h2>Officers <span class="badge">${offs.length}</span></h2><ul class="list">${offs.map(offRow).join("")}</ul>
+    <p class="muted">Senior officers have full access. Junior officers can do only what their team's senior officers allow (set on the team's page). New officers from Slack start as junior. ${pres ? "You're the President, so you can change all of this." : "Only the President can change these."}</p></div>
+   ${blockedCard}
   </div>`;
 }
 async function peopleAction(a, b) {
   const id = b.dataset.id, name = (b.dataset.n || id || "").slice(0, 40), by = me();
   const addMember = (e, n) => fb.setItem("members", e, { email: e, name: n, approvedBy: by });
-  const addOfficer = (e, n) => fb.setItem("officers", e, { name: n, source: "hub", addedBy: by });
+  const addOfficer = (e, n, x = {}) => fb.setItem("officers", e, { name: n, source: "hub", addedBy: by, title: x.title || "", level: x.level || "junior", team: x.team || "" });
+  const found = (e) => state.officers.find((x) => key(x.id) === key(e));
+  // Removing someone who came from Slack would be undone the next time they sign in, so the president's removal is remembered.
+  const blockIfSlack = async (e) => { const o = found(e); if (o?.source === "slack") await fb.setItem("blockedOfficers", key(e), { by, name: o.name || e }); };
   try {
     if (a === "ppl-approve") await addMember(id, name);
-    else if (a === "ppl-approve-officer") { if (confirm(OFFICER_WARNING)) await addOfficer(id, name); }
-    else if (a === "ppl-promote") { if (confirm(OFFICER_WARNING)) { await addOfficer(id, name); await fb.removeItem("members", id); } }
-    else if (a === "ppl-demote") { if (confirm("Make this person a regular member? They'll lose officer access.")) { await addMember(id, name); await fb.removeItem("officers", id); } }
-    else if (a === "ppl-rm-officer") { if (confirm("Remove this officer? They'll lose all access until added again.")) await fb.removeItem("officers", id); }
+    else if (a === "ppl-approve-officer" || a === "ppl-promote") openForm("Make an officer", officerFields({}, false, "junior"), async (v) => {
+      if (v.level === "senior" && !confirm(SENIOR_WARNING)) return;
+      await addOfficer(id, name, v);
+      if (a === "ppl-promote") await fb.removeItem("members", id);
+    });
+    else if (a === "ppl-demote") { if (confirm("Make this person a regular member? They'll lose officer access.")) { await blockIfSlack(id); await addMember(id, name); await fb.removeItem("officers", id); } }
+    else if (a === "ppl-rm-officer") {
+      const fromSlack = found(id)?.source === "slack";
+      if (confirm("Remove this officer? They lose all access." + (fromSlack ? " They came from Slack, so they also won't be added back automatically. You can undo that under Removed from Slack sync." : ""))) { await blockIfSlack(id); await fb.removeItem("officers", id); }
+    }
+    else if (a === "ppl-unblock") await fb.removeItem("blockedOfficers", id);
     else if (a === "ppl-decline") { if (confirm("Clear this request?")) await fb.removeItem("users", id); }
     else if (a === "ppl-remove") { if (confirm("Remove this member? They'll lose access until approved again.")) await fb.removeItem("members", id); }
-    else if (a === "ppl-add") openForm("Add people", [
-      { name: "people", label: "Emails, one per line. Put a name before the email if you like (Jane Doe jane@utexas.edu).", type: "textarea", rows: 8 },
-      { name: "role", label: "Add them as", type: "select", value: b.dataset.role || "member", options: [{ value: "member", label: "Members (home page, calendar and profile)" }, { value: "officer", label: "Officers (full access)" }] },
-    ], async (v) => {
-      const { ok, bad } = parsePeople(v.people);
-      if (!ok.length) throw new Error("No email addresses found.");
-      if (v.role === "officer" && !confirm(OFFICER_WARNING.replace("this an officer", "everyone on this list an officer"))) return;
-      const isO = new Set(state.officers.map((o) => key(o.id))), isM = new Set(state.members.map((m) => key(m.id))), skipped = [];
-      let added = 0;
-      for (const p of ok) {
-        if (v.role === "officer" ? isO.has(p.email) : isO.has(p.email) || isM.has(p.email)) { skipped.push(p.email); continue; } // never overwrite someone's existing record or nickname
-        await (v.role === "officer" ? addOfficer : addMember)(p.email, p.name);
-        added++;
-      }
-      alert(`Added ${added}.` + (skipped.length ? `\nAlready here, left alone: ${skipped.join(", ")}.` : "") + (bad.length ? `\nCouldn't read: ${bad.join("; ")}.` : "") + "\nThey can sign in with that Google email and go straight in.");
-    });
+    else if (a === "ppl-add") {
+      const role = b.dataset.role === "officer" ? "officer" : "member";
+      openForm(role === "officer" ? "Add officers" : "Add members", [
+        { name: "people", label: "Emails, one per line. Put a name before the email if you like (Jane Doe jane@utexas.edu).", type: "textarea", rows: 8 },
+        ...(role === "officer" ? officerFields({}, false, "junior") : []),
+      ], async (v) => {
+        const { ok, bad } = parsePeople(v.people);
+        if (!ok.length) throw new Error("No email addresses found.");
+        if (role === "officer" && v.level === "senior" && !confirm(SENIOR_WARNING.replace("them a senior officer", "everyone on this list a senior officer"))) return;
+        const isO = new Set(state.officers.map((o) => key(o.id))), isM = new Set(state.members.map((m) => key(m.id))), skipped = [];
+        let added = 0;
+        for (const p of ok) {
+          if (role === "officer" ? isO.has(p.email) : isO.has(p.email) || isM.has(p.email)) { skipped.push(p.email); continue; } // never overwrite someone's existing record or nickname
+          if (role === "officer") await addOfficer(p.email, p.name, v); else await addMember(p.email, p.name);
+          added++;
+        }
+        alert(`Added ${added}.` + (skipped.length ? `\nAlready here, left alone: ${skipped.join(", ")}.` : "") + (bad.length ? `\nCouldn't read: ${bad.join("; ")}.` : "") + "\nThey can sign in with that Google email and go straight in.");
+      });
+    }
+  } catch (err) { alert("Could not update: " + err.message); }
+}
+
+// ---------- Teams: who's on the team, and what its junior officers are allowed to do ----------
+function teamRosterCards(t) {
+  if (!state.officer) return "";
+  const roster = dedupe(state.officers).filter((o) => (o.team || "") === t.id), mine = canRoster(t.id), perms = state.teamPerms[t.id] || {};
+  const tag = (o) => `${o.title ? `<span class="chip" style="--c:#555">${esc(o.title)}</span>` : ""}<span class="chip" style="--c:${o.level === "junior" ? "#8b2a33" : "#10204a"}">${o.level === "junior" ? "junior" : "senior"}</span>`;
+  return `<div class="card"><div class="row"><h2>Team officers</h2>${mine ? `<button class="btn pri sm" data-a="team-add" data-team="${esc(t.id)}">+ Add officer</button>` : ""}</div>
+    ${roster.length ? `<ul class="list">${roster.map((o) => `<li><div class="row"><span><strong>${esc(o.name || o.id)}</strong> ${tag(o)}</span>${mine ? `<button class="btn sm del" data-a="team-rm" data-team="${esc(t.id)}" data-id="${esc(o.id)}">Remove</button>` : ""}</div></li>`).join("")}</ul>` : `<p class="empty">No officers on this team yet.</p>`}</div>
+  ${manages(t.id) ? `<div class="card"><div class="row"><h2>Junior officer permissions</h2><button class="btn sm" data-a="team-perms" data-team="${esc(t.id)}">Edit</button></div><p class="muted">Junior officers on ${esc(t.name)} can do only what you allow here.</p><ul class="list"><li>${perms.editProjects ? "✅" : "⬜"} Edit the dates and checkpoints of projects that ${esc(t.name)} owns</li><li>${perms.manageTeam ? "✅" : "⬜"} Add officers to the team and remove them</li></ul></div>` : ""}`;
+}
+async function teamAction(a, b) {
+  const team = b.dataset.team, id = b.dataset.id;
+  try {
+    if (a === "team-add") {
+      // A junior officer can only pick up officers who are on no team yet. Senior officers can move anyone.
+      const cand = dedupe(state.officers).filter((o) => (o.team || "") !== team && (isJunior() ? !o.team : true));
+      if (!cand.length) { alert("There's no one to add."); return; }
+      openForm("Add an officer to this team", [{ name: "who", label: "Officer", type: "select", options: cand.map((o) => ({ value: o.id, label: (o.name || o.id) + (o.team ? ` (now on ${C.teams.find((x) => x.id === o.team)?.name || o.team})` : "") })) }], (v) => fb.updateItem("officers", v.who, { team }));
+    } else if (a === "team-rm") { if (confirm("Take this officer off the team?")) await fb.updateItem("officers", id, { team: "" }); }
+    else if (a === "team-perms") {
+      const p = state.teamPerms[team] || {};
+      openForm("Junior officer permissions", [
+        { name: "editProjects", label: "Edit the dates and checkpoints of this team's projects", type: "check", value: !!p.editProjects },
+        { name: "manageTeam", label: "Add officers to the team and remove them", type: "check", value: !!p.manageTeam },
+      ], (v) => fb.setItem("teamPerms", team, v));
+    }
   } catch (err) { alert("Could not update: " + err.message); }
 }
 
@@ -633,7 +717,7 @@ function renderNow() {
   $("#view").innerHTML = (views[r] || viewHome)();
   const u = unreadCount();
   const navX = $("#nav").scrollLeft;
-  $("#nav").innerHTML = ROUTES.filter(([k]) => state.officer ? (k !== "slack" || C.slack?.endpoint || !fb.configured) : MEMBER_TABS.includes(k)).map(([k, l]) => `<a href="#${k}" class="${k === r ? "on" : ""}">${l}${k === "messages" && u ? ` <span class="badge">${u}</span>` : ""}</a>`).join("");
+  $("#nav").innerHTML = ROUTES.filter(([k]) => state.officer ? (k !== "slack" || C.slack?.endpoint || !fb.configured) && (!["people", "settings"].includes(k) || isSenior()) : MEMBER_TABS.includes(k)).map(([k, l]) => `<a href="#${k}" class="${k === r ? "on" : ""}">${l}${k === "messages" && u ? ` <span class="badge">${u}</span>` : ""}</a>`).join("");
   $("#nav").scrollLeft = navX;
   const onTab = $("#nav .on"); if (onTab && r !== renderNow.last) onTab.scrollIntoView({ inline: "center", block: "nearest" });
   renderNow.last = r;
@@ -659,6 +743,11 @@ document.addEventListener("submit", async (e) => {
   try { await fb.addItem("messages", { from: me(), to: peer, participants: [me(), peer], text }); } catch (err) { alert("Could not send: " + err.message); }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.dataset.off) {
+    const { off, f } = e.target.dataset, v = e.target.value;
+    if (key(off) === me() && f === "title" && v !== "President" && !confirm("You'd stop being the President and lose these controls. Continue?")) { render(); return; }
+    fb.updateItem("officers", off, { [f]: v }).catch((err) => { alert("Could not save: " + err.message); render(); });
+  }
   if (e.target.id === "dq") { drv.q = e.target.value.trim(); loadDrive(); }
   if (e.target.id === "dmnew" && e.target.value) location.hash = "#messages/" + encodeURIComponent(e.target.value);
   if (e.target.id === "nt") { noteFilter.team = e.target.value; render(); }
@@ -671,6 +760,7 @@ document.addEventListener("click", async (e) => {
   if (a.startsWith("drv-")) return driveAction(a, b);
   if (a.startsWith("ppl-")) return peopleAction(a, b);
   if (a.startsWith("set-")) return settingsAction(a, b);
+  if (a.startsWith("team-")) return teamAction(a, b);
   if (a.startsWith("sms-")) return smsAction(a, b);
   if (a.startsWith("proj-")) return projAction(a, b);
   if (a === "del" && confirm("Delete this item?")) { await fb.removeItem(b.dataset.c, b.dataset.id); if (b.dataset.c === "notes") await fb.removeItem("publicNotes", b.dataset.id).catch(() => {}); }
@@ -709,7 +799,7 @@ const parseMs = (t) => t.split("\n").map((l) => l.match(/^\s*(\d+)\s*\|\s*(.+?)\
 async function saveSettings(patch) {
   Object.assign(C, patch);
   const pub = { orgName: C.orgName, tagline: C.tagline, about: C.about, meetingInfo: C.meetingInfo, joinUrl: C.joinUrl, smsDisclosure: C.sms?.disclosure || "", slackEndpoint: C.slack?.endpoint || "", teams: C.teams.map(({ id, name, color, desc }) => ({ id, name, color, desc })) };
-  const set = { calendarId: C.calendarId, calendarTimezone: C.calendarTimezone, driveRootId: C.driveRootId, turnaround: C.turnaround, forms: C.forms, milestones: C.milestones, teams: C.teams };
+  const set = { calendarId: C.calendarId, calendarTimezone: C.calendarTimezone, driveRootId: C.driveRootId, turnaround: C.turnaround, forms: C.forms, milestones: C.milestones, teams: C.teams, officerTitles: titles() };
   await fb.setItem("public", "site", pub);
   await fb.setItem("settings", "site", set);
   state.pubDoc = pub; state.setDoc = set;
@@ -729,7 +819,7 @@ const formFields = (f = {}) => [
   { name: "url", label: "Link", type: "url", required: true, value: f.url },
 ];
 function viewSettings() {
-  if (!state.officer) return `<p class="empty">Officers only.</p>`;
+  if (!isSenior()) return `<p class="empty">Senior officers only.</p>`;
   const kv = (k, v) => `<div class="row" style="justify-content:flex-start;align-items:flex-start;gap:8px;flex-wrap:nowrap;margin:4px 0"><span class="muted" style="min-width:96px;flex:none">${k}</span><span style="min-width:0">${esc(v) || '<span class="muted">not set</span>'}</span></div>`;
   const btn = (label, a, extra = "") => `<button class="btn sm" data-a="${a}" ${extra}>${label}</button>`;
   return `<h1>Settings</h1><p class="muted">Change how the hub looks and what it links to. Saved for everyone, and no need to touch GitHub or Firebase. The first save keeps everything currently in <code>config.js</code> as your starting point.</p>
@@ -743,6 +833,7 @@ function viewSettings() {
    <div class="card"><div class="row"><h2>Text-alert wording</h2>${btn("Edit", "set-sms")}</div><p class="muted" style="white-space:pre-wrap">${esc(C.sms?.disclosure || "")}</p></div>
    <div class="card"><div class="row"><h2>Slack connection</h2>${btn("Edit", "set-slack")}</div>${kv("Worker address", C.slack?.endpoint)}<p class="muted">Leave it blank to hide the Channels tab.</p></div>
    <div class="card"><div class="row"><h2>Project checkpoints</h2>${btn("Edit", "set-ms")}</div>${C.milestones.map((m) => kv(m.weeks + " wk before", m.label)).join("")}</div>
+   <div class="card"><div class="row"><h2>Officer roles</h2>${btn("Edit", "set-titles")}</div><p class="muted">The Role dropdown for officers: ${titles().map(esc).join(" · ")}. Keep <strong>President</strong>, it is what gives the president their powers.</p></div>
    <div class="card"><h2>Start over</h2><p class="muted">Delete everything saved on this page and go back to the defaults in <code>config.js</code>.</p><button class="btn sm del" data-a="set-reset">Reset to defaults</button></div>
   </div>`;
 }
@@ -764,6 +855,11 @@ async function settingsAction(a, b) {
     ], (v) => saveSettings({ calendarId: v.calendarId, calendarTimezone: v.calendarTimezone || "America/Chicago", driveRootId: driveId(v.driveRootId) }));
     else if (a === "set-sms") openForm("Text-alert wording", [{ name: "disclosure", label: "Exactly what people agree to. {org} becomes your organization's name. Each person's agreement saves the wording they saw.", type: "textarea", rows: 6, required: true, value: C.sms?.disclosure }], (v) => saveSettings({ sms: { ...C.sms, disclosure: v.disclosure } }));
     else if (a === "set-slack") openForm("Slack connection", [{ name: "endpoint", label: "Cloudflare Worker address (https://…workers.dev). Blank hides the Channels tab.", type: "url", value: C.slack?.endpoint }], (v) => saveSettings({ slack: { ...C.slack, endpoint: v.endpoint } }));
+    else if (a === "set-titles") openForm("Officer roles", [{ name: "t", label: "One role per line, for example Treasurer. Keep President.", type: "textarea", rows: 8, value: titles().join("\n") }], (v) => {
+      const t = v.t.split("\n").map((x) => x.trim().slice(0, 40)).filter(Boolean);
+      if (!t.length) throw new Error("Add at least one role.");
+      return saveSettings({ officerTitles: t });
+    });
     else if (a === "set-ms") openForm("Project checkpoints", [{ name: "ms", label: "One per line: weeks before the due date | what to do. Changing these can shift which checkpoints show as done on existing projects.", type: "textarea", rows: 7, value: C.milestones.map((m) => `${m.weeks} | ${m.label}`).join("\n") }], (v) => {
       const ms = parseMs(v.ms);
       if (!ms.length) throw new Error("Use lines like: 6 | Kickoff and budget plan");
@@ -835,6 +931,10 @@ fb.onAuth(async (user) => {
     fb.watch("officers", (d) => { state.officers = d; rebuildDir(); render(); });
     fb.watch("users", (d) => { state.signups = d; render(); });
     fb.watch("smsConsent", (d) => { state.smsList = d; render(); });
+    fb.watch("teamPerms", (d) => { state.teamPerms = Object.fromEntries(d.map((x) => [x.id, x])); render(); });
+    try { // the list of removed Slack officers is only readable by the president
+      if ((await fb.getItem("officers", user.email.toLowerCase()))?.title === "President") fb.watch("blockedOfficers", (d) => { state.blocked = d; render(); });
+    } catch {}
   } else { // members: only member announcements, notes tagged public, and the links list
     fb.watchWhere("announcements", "audience", "members", (d) => { state.announcements = d; render(); });
     fb.watch("publicNotes", (d) => { state.publicNotes = d; render(); });

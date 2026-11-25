@@ -14,6 +14,7 @@ export function applySettings(C, pub, set) {
     for (const k of ["calendarId", "calendarTimezone", "driveRootId", "turnaround"]) if (set[k] !== undefined) C[k] = set[k];
     if (Array.isArray(set.forms)) C.forms = set.forms;
     if (set.milestones?.length) C.milestones = set.milestones;
+    if (set.officerTitles?.length) C.officerTitles = set.officerTitles;
     if (set.teams?.length) C.teams = set.teams.map((t) => ({ slack: "#", drive: "#", ...t }));
   }
 }
