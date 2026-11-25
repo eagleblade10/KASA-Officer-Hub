@@ -96,3 +96,7 @@ iframe{width:100%;border:0;border-radius:10px;background:#fff}
   .who .chip{display:none}
   .who .btn.sm{padding:4px 10px;font-size:.8rem}
 }
+
+/* a text box with a button beside it: the box takes the space, the button keeps its size */
+form.row > input{flex:1 1 auto;min-width:0;width:auto}
+form.row > .btn{flex:none;white-space:nowrap}
