@@ -23,9 +23,10 @@ const mem = {
   projects: [
     { id: "p1", name: "Fall Showcase", owner: "events", needsFrom: ["media", "finance"], due: iso(30), trello: "", drive: "", done: [0] },
     { id: "p2", name: "Recruitment Week", owner: "outreach", needsFrom: ["media"], due: iso(12), trello: "", drive: "", done: [] },
-    { id: "p3", name: "General meetings", owner: "events", needsFrom: [], due: "", links: [{ name: "Agenda template", url: "#" }], done: [] },
+    { id: "p3", name: "General meetings", owner: "events", needsFrom: [], due: "", description: "Every general meeting gets its own sub-project with the agenda, slides and notes.", assignees: ["jane@utexas.edu"], links: [{ name: "Agenda template", url: "#" }], done: [] },
     { id: "p4", name: "General meeting: Nov 4", owner: "events", parent: "p3", needsFrom: [], due: iso(-5), links: [{ name: "Slides", url: "#" }], done: [] },
     { id: "p5", name: "General meeting: Nov 18", owner: "events", parent: "p3", needsFrom: [], due: iso(9), links: [], done: [] },
+    { id: "p6", name: "Venue and food", owner: "events", parent: "p4", needsFrom: ["finance"], assignees: ["demo@example.com"], description: "Book the room and order food for 60 people.", due: "", links: [], done: [] },
   ],
   users: [ // sign-up requests (the name is the person's nickname)
     { id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" },
@@ -34,6 +35,7 @@ const mem = {
   ],
   members: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)" }],
   links: [],
+  pages: [],
   smsConsent: [
     { id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
     { id: "stranger@example.com", email: "stranger@example.com", name: "Not approved (demo)", phone: "+15125550000", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },

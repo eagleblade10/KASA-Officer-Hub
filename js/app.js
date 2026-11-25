@@ -5,7 +5,7 @@ import * as drive from "./drive.js";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const url = (u) => (/^https?:\/\//i.test(u || "") ? esc(u) : "#");
-const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], slack: null, slackErr: "", slackLoading: false };
+const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], pages: [], slack: null, slackErr: "", slackLoading: false };
 const team = (id) => C.teams.find((t) => t.id === id);
 const chip = (id) => { const t = team(id); return t ? `<span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span>` : id === "all" ? `<span class="chip">All org</span>` : ""; };
 
@@ -37,9 +37,9 @@ function openForm(title, fields, onSubmit) {
   const f = $("#dform");
   f.innerHTML = `<h2>${esc(title)}</h2>` + fields.map((x) => {
     if (x.type === "select") return `<label>${esc(x.label)}<select name="${x.name}">${x.options.map((o) => `<option value="${esc(o.value)}" ${o.value === x.value ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select></label>`;
-    if (x.type === "checks") return `<label>${esc(x.label)}</label><div class="checks">${x.options.map((o) => `<label class="inline"><input type="checkbox" name="${x.name}" value="${esc(o.value)}">${esc(o.label)}</label>`).join("")}</div>`;
-    if (x.type === "check") return `<label class="inline"><input type="checkbox" name="${x.name}">${esc(x.label)}</label>`;
-    if (x.type === "textarea") return `<label>${esc(x.label)}<textarea name="${x.name}" rows="3"></textarea></label>`;
+    if (x.type === "checks") return `<label>${esc(x.label)}</label><div class="checks"${x.scroll ? ' style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px"' : ""}>${x.options.map((o) => `<label class="inline"><input type="checkbox" name="${x.name}" value="${esc(o.value)}" ${(x.value || []).includes(o.value) ? "checked" : ""}>${esc(o.label)}</label>`).join("")}</div>`;
+    if (x.type === "check") return `<label class="inline"><input type="checkbox" name="${x.name}" ${x.value ? "checked" : ""}>${esc(x.label)}</label>`;
+    if (x.type === "textarea") return `<label>${esc(x.label)}<textarea name="${x.name}" rows="${x.rows || 3}">${esc(x.value || "")}</textarea></label>`;
     return `<label>${esc(x.label)}<input name="${x.name}" type="${x.type || "text"}" ${x.required ? "required" : ""} placeholder="${esc(x.ph || "")}" value="${esc(x.value || "")}"></label>`;
   }).join("") + `<div class="row" style="margin-top:16px"><button type="button" class="btn" id="cancel">Cancel</button><button class="btn pri">Save</button></div>`;
   $("#cancel").onclick = () => $("#dlg").close();
@@ -58,7 +58,7 @@ function openForm(title, fields, onSubmit) {
 const teamOpts = (all) => [...(all ? [{ value: "all", label: "All org" }] : []), ...C.teams.map((t) => ({ value: t.id, label: t.name }))];
 
 // ---------- views ----------
-const ROUTES = [["home", "Home"], ["teams", "Teams"], ["projects", "Projects"], ["notes", "Meeting notes"], ["messages", "Messages"], ["drive", "Drive"], ["slack", "Channels"], ["people", "People"], ["profile", "Profile"], ["calendar", "Calendar"], ["requests", "Requests"]];
+const ROUTES = [["home", "Home"], ["start", "Start here"], ["teams", "Teams"], ["projects", "Projects"], ["notes", "Meeting notes"], ["messages", "Messages"], ["drive", "Drive"], ["slack", "Channels"], ["people", "People"], ["profile", "Profile"], ["calendar", "Calendar"], ["requests", "Requests"]];
 const officerBtn = (label, action, extra = "") => (state.officer ? `<button class="btn pri sm" data-a="${action}" ${extra}>${label}</button>` : "");
 const delBtn = (coll, id) => (state.officer ? `<button class="btn sm del" data-a="del" data-c="${coll}" data-id="${esc(id)}">Delete</button>` : "");
 
@@ -101,7 +101,7 @@ function viewTeams(id) {
   const own = state.projects.filter((p) => p.owner === id && !p.parent), asks = state.projects.filter((p) => (p.needsFrom || []).includes(id) && p.owner !== id && !p.parent);
   const notes = state.notes.filter((n) => n.team === id).sort((a, b) => b.date.localeCompare(a.date));
   return `<p><a href="#teams">← All teams</a></p><div class="row"><h1>${chip(id)} ${esc(t.name)}</h1><span>
-    ${["slack", "drive", "trello"].map((k) => `<a class="btn sm" target="_blank" rel="noopener" href="${url(t[k])}">${k[0].toUpperCase() + k.slice(1)}</a>`).join(" ")}</span></div><p class="muted">${esc(t.desc)}</p>
+    ${["slack", "drive"].filter((k) => t[k] && t[k] !== "#").map((k) => `<a class="btn sm" target="_blank" rel="noopener" href="${url(t[k])}">${k[0].toUpperCase() + k.slice(1)}</a>`).join(" ")}</span></div><p class="muted">${esc(t.desc)}</p>
   <div class="grid cols-2">
     <div class="card"><h2>Asks from other teams</h2><p class="muted">Projects that need something from ${esc(t.name)}.</p>${asks.length ? `<ul class="list">${asks.map((p) => { const nx = checkpoints(p).find((c) => !c.done); return `<li><strong>${esc(p.name)}</strong> ${chip(p.owner)}<div class="muted">${nx ? `${esc(nx.label)} · <span class="due ${cls(daysFrom(nx.date))}">${rel(daysFrom(nx.date))}</span>` : "All checkpoints done"}</div></li>`; }).join("")}</ul>` : `<p class="empty">No open asks.</p>`}</div>
     <div class="card"><h2>${esc(t.name)} projects</h2>${own.length ? `<ul class="list">${own.map((p) => `<li><strong>${esc(p.name)}</strong> <span class="muted">${p.due ? "due " + fmt(parse(p.due)) + " · " + progress(p) + "%" : "folder"}</span></li>`).join("")}</ul>` : `<p class="empty">None yet.</p>`}</div>
@@ -110,71 +110,102 @@ function viewTeams(id) {
   </div>`;
 }
 
-const projName = (p) => { const par = state.projects.find((x) => x.id === p.parent); return (par ? par.name + " › " : "") + p.name; };
+// ---------- Projects: nested sub-projects, descriptions, and assignments to teams and people ----------
+const ancestors = (p) => {
+  const out = [], seen = new Set([p.id]);
+  for (let cur = p; cur.parent && !seen.has(cur.parent);) {
+    const par = state.projects.find((x) => x.id === cur.parent);
+    if (!par) break;
+    out.unshift(par); seen.add(par.id); cur = par;
+  }
+  return out;
+};
+const projName = (p) => [...ancestors(p), p].map((x) => x.name).join(" › ");
+const descendants = (id) => {
+  const out = [], seen = new Set([id]), stack = [id];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const c of state.projects.filter((x) => x.parent === cur)) if (!seen.has(c.id)) { seen.add(c.id); out.push(c); stack.push(c.id); }
+  }
+  return out;
+};
 const projLinks = (p) => [
   ...(p.links || []).map((l, i) => ({ ...l, i })),
-  ...(p.trello ? [{ name: "Trello", url: p.trello, legacy: "trello" }] : []),
+  ...(p.trello ? [{ name: "Trello", url: p.trello, legacy: "trello" }] : []), // older projects only
   ...(p.drive ? [{ name: "Drive folder", url: p.drive, legacy: "drive" }] : []),
 ];
-const projData = (v) => {
-  const { trello, drive: d, ...rest } = v, links = [];
-  if (trello) links.push({ name: "Trello", url: trello });
-  if (d) links.push({ name: "Drive folder", url: d });
-  return { ...rest, links, done: [] };
-};
+const peopleOpts = () => [...state.users].sort((a, b) => a.name.localeCompare(b.name)).map((u) => ({ value: u.email, label: u.name }));
+const personChip = (e) => `<span class="chip" style="--c:#10204a">${esc(nameOf(e))}</span>`;
+const assignedLine = (p) => `<div>${p.owner ? `Team ${chip(p.owner)}` : ""} ${(p.needsFrom || []).length ? `<span class="muted">with</span> ${p.needsFrom.map(chip).join("")}` : ""} ${(p.assignees || []).length ? `<span class="muted">People</span> ${p.assignees.map(personChip).join("")}` : ""}</div>`;
+const projectFields = (p = {}) => [
+  { name: "name", label: "Name", required: true, value: p.name },
+  { name: "description", label: "Description", type: "textarea", rows: 4, value: p.description },
+  { name: "owner", label: "Lead team", type: "select", options: teamOpts(), value: p.owner },
+  { name: "needsFrom", label: "Other teams involved", type: "checks", options: teamOpts(), value: p.needsFrom },
+  { name: "assignees", label: "People assigned", type: "checks", scroll: true, options: peopleOpts(), value: p.assignees },
+  { name: "due", label: "Due / event date (optional; a date on a top-level project adds automatic checkpoints)", type: "date", value: p.due },
+];
 const cpRows = (p) => checkpoints(p).map((c) => `<div class="cp ${c.done ? "done" : ""}"><input type="checkbox" style="width:auto" ${c.done ? "checked" : ""} ${state.officer ? "" : "disabled"} data-a="tog" data-id="${esc(p.id)}" data-i="${c.i}"><span>${esc(c.label)} <span class="muted">· ${fmt(c.date)}</span></span></div>`).join("");
 
 function projCard(p) {
   const n = p.due ? daysFrom(parse(p.due)) : null, subs = state.projects.filter((x) => x.parent === p.id).length, tracked = checkpoints(p).length > 0;
-  return `<div class="card"><div class="row"><h2><a href="#projects/${esc(p.id)}" style="text-decoration:none">${esc(p.name)}</a></h2>${p.due ? `<span class="due ${cls(n)}">${fmt(parse(p.due))} · ${rel(n)}</span>` : `<span class="muted">${subs} sub-project${subs === 1 ? "" : "s"}</span>`}</div>
-    <div>Owner ${chip(p.owner)} ${(p.needsFrom || []).length ? `<span class="muted">needs:</span> ${p.needsFrom.map(chip).join("")}` : ""}</div>
+  return `<div class="card"><div class="row"><h2><a href="#projects/${esc(p.id)}" style="text-decoration:none">${esc(p.name)}</a></h2>${p.due ? `<span class="due ${cls(n)}">${fmt(parse(p.due))} · ${rel(n)}</span>` : ""}</div>
+    ${p.description ? `<p class="muted" style="white-space:pre-wrap">${esc(p.description.slice(0, 160))}${p.description.length > 160 ? "…" : ""}</p>` : ""}
+    ${assignedLine(p)}
     ${tracked ? `<div class="bar"><i style="width:${progress(p)}%"></i></div>${cpRows(p)}` : ""}
-    <div style="margin-top:8px"><a class="btn sm" href="#projects/${esc(p.id)}">Open</a> ${p.due && subs ? `<span class="muted">${subs} sub-project${subs === 1 ? "" : "s"}</span>` : ""}</div></div>`;
+    <div style="margin-top:8px"><a class="btn sm" href="#projects/${esc(p.id)}">Open</a> <span class="muted">${subs} sub-project${subs === 1 ? "" : "s"}</span></div></div>`;
 }
 
 function viewProjects(arg) {
   if (arg) return viewProject(decodeURIComponent(arg));
   const top = state.projects.filter((p) => !p.parent).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+  const mine = state.projects.filter((p) => (p.assignees || []).some((e) => key(e) === me()));
   return `<div class="row"><h1>Projects</h1>${officerBtn("+ New project", "addProj")}</div>
-  <p class="muted">Open a project to see its sub-projects, links and notes. Projects with a due date get automatic checkpoints. Leave the date blank for a folder-style project like "General meetings".</p>
+  <p class="muted">Open a project to see its description, who's on it, its sub-projects, links and notes. Sub-projects can go as deep as you like. A date on a top-level project adds automatic checkpoints; leave it blank for a folder like "General meetings".</p>
+  ${mine.length ? `<div class="card" style="margin-bottom:16px"><h2>Assigned to you</h2><ul class="list">${mine.map((p) => `<li><a href="#projects/${esc(p.id)}"><strong>${esc(projName(p))}</strong></a>${p.due ? ` <span class="muted">${fmt(parse(p.due))}</span>` : ""}</li>`).join("")}</ul></div>` : ""}
   <div class="grid cols-2">${top.map(projCard).join("") || `<p class="empty">No projects yet.</p>`}</div>`;
 }
 
 function viewProject(id) {
   const p = state.projects.find((x) => x.id === id);
   if (!p) return `<p><a href="#projects">← Projects</a></p><p class="empty">Project not found.</p>`;
-  const par = state.projects.find((x) => x.id === p.parent), x = `data-id="${esc(p.id)}"`;
-  const subs = state.projects.filter((s) => s.parent === id).sort((a, b) => (b.due || "").localeCompare(a.due || ""));
+  const x = `data-id="${esc(p.id)}"`, crumbs = ancestors(p).map((a) => `<a href="#projects/${esc(a.id)}">${esc(a.name)}</a> / `).join("");
+  const subs = state.projects.filter((s) => s.parent === id).sort((a, b) => (b.due || "").localeCompare(a.due || "") || a.name.localeCompare(b.name));
   const notes = state.notes.filter((n) => n.project === id).sort((a, b) => b.date.localeCompare(a.date));
   const links = projLinks(p), tracked = checkpoints(p).length > 0, n = p.due ? daysFrom(parse(p.due)) : null;
-  const subRow = (s) => `<li><div class="row"><a href="#projects/${esc(s.id)}"><strong>${esc(s.name)}</strong></a><span class="muted">${s.due ? fmt(parse(s.due)) + " · " : ""}${state.notes.filter((q) => q.project === s.id).length} notes · ${projLinks(s).length} links</span></div></li>`;
-  return `<p class="muted"><a href="#projects">Projects</a> / ${par ? `<a href="#projects/${esc(par.id)}">${esc(par.name)}</a> / ` : ""}${esc(p.name)}</p>
-  <div class="row"><h1>${esc(p.name)}</h1>${p.due ? `<span class="due ${tracked ? cls(n) : ""}">${fmt(parse(p.due))}${tracked ? " · " + rel(n) : ""}</span>` : ""}</div>
-  <p>Owner ${chip(p.owner)} ${(p.needsFrom || []).length ? `<span class="muted">needs:</span> ${p.needsFrom.map(chip).join("")}` : ""}</p>
-  <div class="grid cols-2">
+  const subRow = (s) => {
+    const kids = state.projects.filter((q) => q.parent === s.id).length;
+    return `<li><div class="row"><span><a href="#projects/${esc(s.id)}"><strong>${esc(s.name)}</strong></a> ${(s.assignees || []).map(personChip).join("")}</span><span class="muted">${s.due ? fmt(parse(s.due)) + " · " : ""}${kids ? kids + " sub · " : ""}${state.notes.filter((q) => q.project === s.id).length} notes · ${projLinks(s).length} links</span></div></li>`;
+  };
+  return `<p class="muted"><a href="#projects">Projects</a> / ${crumbs}${esc(p.name)}</p>
+  <div class="row"><h1>${esc(p.name)}</h1><span>${p.due ? `<span class="due ${tracked ? cls(n) : ""}">${fmt(parse(p.due))}${tracked ? " · " + rel(n) : ""}</span> ` : ""}${officerBtn("Edit", "proj-edit", x)}</span></div>
+  ${p.description ? `<p style="white-space:pre-wrap">${esc(p.description)}</p>` : ""}
+  ${assignedLine(p)}
+  <div class="grid cols-2" style="margin-top:12px">
    ${tracked ? `<div class="card"><h2>Checkpoints</h2><div class="bar"><i style="width:${progress(p)}%"></i></div>${cpRows(p)}</div>` : ""}
+   <div class="card"><div class="row"><h2>Sub-projects</h2>${officerBtn("+ Sub-project", "proj-addsub", x)}</div>${subs.length ? `<ul class="list">${subs.map(subRow).join("")}</ul>` : `<p class="empty">None yet. For example, one for each general meeting or each part of an event.</p>`}</div>
    <div class="card"><div class="row"><h2>Links</h2>${officerBtn("+ Link", "proj-addlink", x)}</div>
     ${links.length ? `<ul class="list">${links.map((l) => `<li><div class="row"><a target="_blank" rel="noopener" href="${url(l.url)}">${esc(l.name)}</a>${state.officer ? `<button class="btn sm del" data-a="proj-rmlink" ${x} ${l.legacy ? `data-k="${l.legacy}"` : `data-i="${l.i}"`}>×</button>` : ""}</div></li>`).join("")}</ul>` : `<p class="empty">No links yet. Add the agenda, slides, a folder…</p>`}</div>
    <div class="card"><div class="row"><h2>Meeting notes</h2>${officerBtn("+ Notes", "proj-addnote", x)}</div>
     ${notes.length ? `<ul class="list">${notes.map(noteLi).join("")}</ul>` : `<p class="empty">No notes linked yet.</p>`}</div>
-   ${!p.parent ? `<div class="card"><div class="row"><h2>Sub-projects</h2>${officerBtn("+ Sub-project", "proj-addsub", x)}</div>${subs.length ? `<ul class="list">${subs.map(subRow).join("")}</ul>` : `<p class="empty">None yet. For example, one for each general meeting.</p>`}</div>` : ""}
   </div>
-  ${state.officer ? `<p style="margin-top:16px"><button class="btn sm del" data-a="proj-del" ${x}>Delete this ${p.parent ? "sub-project" : "project"}</button></p>` : ""}`;
+  ${state.officer ? `<p style="margin-top:16px"><button class="btn sm del" data-a="proj-del" ${x}>Delete this ${p.parent ? "sub-project" : "project"} and everything inside it</button></p>` : ""}`;
 }
 
 async function projAction(a, b) {
   const p = state.projects.find((x) => x.id === b.dataset.id);
   if (!p) return;
   try {
-    if (a === "proj-addsub") openForm("New sub-project", [{ name: "name", label: "Name", required: true, ph: "General meeting: Nov 4" }, { name: "due", label: "Date (optional)", type: "date" }], (v) => fb.addItem("projects", { name: v.name, due: v.due, owner: p.owner, parent: p.id, needsFrom: [], links: [], done: [] }));
+    if (a === "proj-addsub") openForm("New sub-project", projectFields({ owner: p.owner }), (v) => fb.addItem("projects", { ...v, parent: p.id, links: [], done: [] }));
+    else if (a === "proj-edit") openForm("Edit project", projectFields(p), (v) => fb.updateItem("projects", p.id, v));
     else if (a === "proj-addlink") openForm("Add a link", [{ name: "name", label: "Label", required: true, ph: "Agenda doc" }, { name: "url", label: "URL", type: "url", required: true }], (v) => fb.updateItem("projects", p.id, { links: [...(p.links || []), v] }));
     else if (a === "proj-addnote") openForm("Add meeting notes", noteFields({ project: p.id }), (v) => fb.addItem("notes", v));
     else if (a === "proj-rmlink") {
       if (b.dataset.k) await fb.updateItem("projects", p.id, { [b.dataset.k]: "" });
       else await fb.updateItem("projects", p.id, { links: (p.links || []).filter((_, i) => i !== Number(b.dataset.i)) });
     } else if (a === "proj-del") {
-      const kids = state.projects.filter((x) => x.parent === p.id);
-      if (!confirm(`Delete "${p.name}"${kids.length ? ` and its ${kids.length} sub-project${kids.length === 1 ? "" : "s"}` : ""}? Meeting-note links stay in the Notes tab.`)) return;
+      const kids = descendants(p.id);
+      if (!confirm(`Delete "${p.name}"${kids.length ? ` and the ${kids.length} sub-project${kids.length === 1 ? "" : "s"} inside it` : ""}? Meeting-note links stay in the Notes tab.`)) return;
       for (const k of kids) await fb.removeItem("projects", k.id);
       await fb.removeItem("projects", p.id);
       location.hash = p.parent ? "#projects/" + p.parent : "#projects";
@@ -384,6 +415,38 @@ document.addEventListener("submit", async (e) => {
   try { await fb.setItem("smsConsent", me(), data); state.sms = { id: me(), ...data }; refreshSms(); } catch (err) { alert("Could not save: " + err.message); }
 });
 
+// ---------- Start here (officers can edit the text; Slack channel topics fill in "which channel does what") ----------
+const DEFAULT_START = `## Welcome to {org}
+This is the officer hub. Plans, decisions and links live here so nothing gets lost in chat.
+
+## The tools and what each is for
+- Slack: day-to-day chat. Anything that has to be found later goes in the hub.
+- This hub: projects and assignments, meeting notes, requests and forms, announcements, links.
+- Google Drive: our shared files (Drive tab).
+- Google Calendar: meetings and deadlines (Calendar tab).
+- Google Forms: media requests, event proposals and reimbursements (Requests tab).
+
+## Where to put things
+- A new event or task: make a project (Projects tab), add sub-projects for its parts, and assign teams and people.
+- Meeting notes: write them in a Google Doc, then add the link under Meeting notes.
+- Something everyone should see: post an announcement on Home. It can post to Slack too.
+
+## Who to ask
+- Hub or website problems: [add a name]
+- Media requests: [add a name]
+- Reimbursements and budget: [add a name]
+- Event proposals: [add a name]
+- Anything else: [add a name]`;
+const startBody = () => state.pages.find((p) => p.id === "start")?.body ?? DEFAULT_START.replace("{org}", C.orgName);
+// Tiny formatter: "## " heading, "- " bullet, links. Everything is escaped first.
+const rich = (t) => esc(t).split("\n").map((l) => l.startsWith("## ") ? `<h3 style="margin-top:14px">${l.slice(3)}</h3>` : l.startsWith("- ") ? `<p style="margin:4px 0">• ${l.slice(2)}</p>` : l.trim() ? `<p>${l}</p>` : "").join("").replace(/(https?:\/\/[^\s<]+)/g, '<a target="_blank" rel="noopener" href="$1">$1</a>');
+function viewStart() {
+  const chans = state.officer ? (state.slack?.channels || []).filter((c) => c.topic) : [];
+  return `<div class="row"><h1>Start here</h1>${officerBtn("Edit this page", "startEdit")}</div>
+  <div class="card">${rich(startBody())}</div>
+  ${state.officer ? `<div class="card" style="margin-top:16px"><h2>Slack channels and what they're for</h2>${state.slackErr ? `<p class="muted">${esc(state.slackErr)}</p>` : chans.length ? `<ul class="list">${chans.map(chanRow).join("")}</ul>` : `<p class="empty">${state.slack === null ? "Loading…" : "No channel descriptions yet. Add a topic or description to a Slack channel and it shows up here."}</p>`}</div>` : ""}`;
+}
+
 // ---------- Slack channels (auto-updating) ----------
 let slackQ = "";
 async function loadSlack() {
@@ -399,6 +462,12 @@ async function loadSlack() {
     state.slackErr = "";
   } catch (e) { state.slack = { team: "", channels: [] }; state.slackErr = e.message; }
   state.slackLoading = false; render();
+}
+// Sends a hub announcement to Slack through the Worker. The hub copy is already saved by the time this runs.
+async function postToSlack(a) {
+  if (!fb.configured) return; // demo mode
+  const r = await fetch(C.slack.endpoint.replace(/\/$/, "") + "/announce", { method: "POST", headers: { Authorization: "Bearer " + (await fb.idToken()), "Content-Type": "application/json" }, body: JSON.stringify({ title: a.title, body: a.body }) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Error " + r.status);
 }
 const chanUrl = (c) => `https://slack.com/app_redirect?team=${encodeURIComponent(state.slack.team)}&channel=${encodeURIComponent(c.id)}`;
 const chanRow = (c) => `<li><div class="row"><span><a target="_blank" rel="noopener" href="${chanUrl(c)}"><strong>${c.private ? "🔒 " : "#"}${esc(c.name)}</strong></a> <span class="muted">${c.members} members</span>${c.topic ? `<div class="muted">${esc(c.topic)}</div>` : ""}</span></div></li>`;
@@ -455,9 +524,9 @@ function viewMessages(arg) {
 function render() {
   if (!state.user || state.pending) return;
   const [r, arg] = (location.hash.slice(1) || "home").split("/");
-  const views = { home: viewHome, teams: () => viewTeams(arg), projects: () => viewProjects(arg), notes: viewNotes, calendar: viewCalendar, requests: viewRequests, messages: () => viewMessages(arg), drive: viewDrive, people: viewPeople, profile: viewProfile, slack: viewSlack };
+  const views = { home: viewHome, teams: () => viewTeams(arg), projects: () => viewProjects(arg), notes: viewNotes, calendar: viewCalendar, requests: viewRequests, messages: () => viewMessages(arg), drive: viewDrive, people: viewPeople, profile: viewProfile, slack: viewSlack, start: viewStart };
   if (r === "drive" && drv.need && drive.connected()) { drv.need = false; loadDrive(false); }
-  if ((r === "slack" || r === "teams") && state.officer && state.slack === null && !state.slackLoading) loadSlack();
+  if ((r === "slack" || r === "teams" || r === "start") && state.officer && state.slack === null && !state.slackLoading) loadSlack();
   const keep = document.activeElement?.id, dmv = $("#dmtext")?.value;
   $("#view").innerHTML = (views[r] || viewHome)();
   const u = unreadCount();
@@ -501,9 +570,14 @@ document.addEventListener("click", async (e) => {
     const p = state.projects.find((x) => x.id === b.dataset.id), i = Number(b.dataset.i), d = new Set(p.done || []);
     d.has(i) ? d.delete(i) : d.add(i); await fb.updateItem("projects", p.id, { done: [...d] });
   }
+  if (a === "startEdit") openForm("Edit the Start here page", [{ name: "body", label: "Page text (## for a heading, - for a bullet)", type: "textarea", rows: 16, value: startBody() }], (v) => fb.setItem("pages", "start", { body: v.body }));
   if (a === "addLink") openForm("Add a link", [{ name: "name", label: "Label", required: true, ph: "Trello board" }, { name: "url", label: "URL", type: "url", required: true }], (v) => fb.addItem("links", v));
-  if (a === "addAnn") openForm("New announcement", [{ name: "title", label: "Title", required: true }, { name: "body", label: "Details", type: "textarea" }, { name: "pinned", label: "Pin to top", type: "check" }], (v) => fb.addItem("announcements", v));
-  if (a === "addProj") openForm("New project", [{ name: "name", label: "Project / event name", required: true }, { name: "owner", label: "Owner team", type: "select", options: teamOpts() }, { name: "needsFrom", label: "Needs help from", type: "checks", options: teamOpts() }, { name: "due", label: "Due / event date (optional, leave blank for a folder-style project)", type: "date" }, { name: "trello", label: "Trello card or board URL", type: "url" }, { name: "drive", label: "Drive folder URL", type: "url" }], (v) => fb.addItem("projects", projData(v)));
+  if (a === "addAnn") openForm("New announcement", [{ name: "title", label: "Title", required: true }, { name: "body", label: "Details", type: "textarea" }, { name: "pinned", label: "Pin to top", type: "check" }, ...(C.slack?.endpoint || !fb.configured ? [{ name: "slack", label: "Also post to Slack", type: "check", value: true }] : [])], async (v) => {
+    const { slack, ...ann } = v;
+    await fb.addItem("announcements", ann);
+    if (slack) await postToSlack(ann).catch((err) => alert("Saved in the hub, but it couldn't be posted to Slack: " + err.message));
+  });
+  if (a === "addProj") openForm("New project", projectFields(), (v) => fb.addItem("projects", { ...v, links: [], done: [] }));
   if (a === "addNote") openForm("Add meeting notes", noteFields(), (v) => fb.addItem("notes", v));
 });
 window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
@@ -552,7 +626,7 @@ fb.onAuth(async (user) => {
   }
   state.officer = role === "officer";
   fb.watchDMs(user.email.toLowerCase(), (d) => { state.messages = d; render(); });
-  for (const c of ["announcements", "projects", "notes", "links"]) fb.watch(c, (d) => { state[c] = d; render(); });
+  for (const c of ["announcements", "projects", "notes", "links", "pages"]) fb.watch(c, (d) => { state[c] = d; render(); });
   fb.watch("members", (d) => { state.members = d; rebuildDir(); render(); });
   fb.watch("officers", (d) => { state.officers = d; rebuildDir(); render(); });
   if (state.officer) fb.watch("users", (d) => { state.signups = d; render(); });
