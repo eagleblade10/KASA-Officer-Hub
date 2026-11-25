@@ -31,6 +31,9 @@
 
 <script type="module">
   import { CONFIG as C } from "./js/config.js";
+  import { applySettings } from "./js/settings.js";
+  import * as fb from "./js/firebase.js";
+  try { applySettings(C, await fb.getItem("public", "site")); } catch {} // text officers saved in the hub wins over config.js
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   document.documentElement.style.setProperty("--accent", C.accent);
   document.documentElement.style.setProperty("--red", C.accent2);
