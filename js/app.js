@@ -265,17 +265,25 @@ async function driveAction(a, b) {
 }
 
 // ---------- People (officers approve members) ----------
+// One entry per person, even if their email is saved in different capitals or with a stray space.
+// When there are several records for one person, the one that has a name wins over an email-only one.
+const key = (id) => id.trim().toLowerCase();
+const dedupe = (list) => {
+  const best = new Map();
+  for (const d of list) { const k = key(d.id), cur = best.get(k); if (!cur || (!cur.name && d.name)) best.set(k, d); }
+  return [...best.values()];
+};
 function rebuildDir() {
-  const seen = new Set();
-  state.users = [...state.officers, ...state.members].map((d) => ({ email: d.id.toLowerCase(), name: d.name || d.id })).filter((u) => !seen.has(u.email) && seen.add(u.email));
+  state.users = dedupe([...state.officers, ...state.members]).map((d) => ({ email: key(d.id), name: d.name || d.id }));
 }
 function viewPeople() {
   if (!state.officer) return `<p class="empty">Officers only.</p>`;
-  const uniq = (l) => l.filter((d, i) => l.findIndex((x) => x.id.toLowerCase() === d.id.toLowerCase()) === i); // same email in different capitals = one person
+  const uniq = dedupe; // same email in different capitals = one person
   const offs = uniq(state.officers), mems = uniq(state.members);
-  const have = new Set([...offs, ...mems].map((d) => d.id.toLowerCase())), offIds = new Set(offs.map((o) => o.id.toLowerCase()));
-  const pending = uniq(state.signups).filter((u) => !have.has(u.id.toLowerCase())).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  const members = mems.filter((m) => !offIds.has(m.id.toLowerCase())).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const have = new Set([...offs, ...mems].map((d) => key(d.id))), offIds = new Set(offs.map((o) => key(o.id)));
+  const names = new Map([...mems, ...offs].filter((d) => d.name).map((d) => [key(d.id), d.name])); // so an email-only record can borrow the person's name
+  const pending = uniq(state.signups).filter((u) => !have.has(key(u.id))).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const members = mems.filter((m) => !offIds.has(key(m.id))).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   return `<h1>People</h1><p class="muted">Anyone can sign in with Google, but they see nothing until you approve them here.</p>
   <div class="grid cols-2">
    <div class="card"><h2>Waiting for approval <span class="badge">${pending.length}</span></h2>
@@ -284,7 +292,7 @@ function viewPeople() {
    <div class="card"><h2>Members <span class="badge">${members.length}</span></h2>
     ${members.length ? `<ul class="list">${members.map((m) => `<li><div class="row"><span><strong>${esc(m.name || m.id)}</strong><div class="muted">${esc(m.id)}</div></span><button class="btn sm del" data-a="ppl-remove" data-id="${esc(m.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="empty">No members yet.</p>`}</div>
    ${smsListCard()}
-   <div class="card"><h2>Officers</h2><ul class="list">${offs.map((o) => `<li><strong>${esc(o.name || o.id)}</strong>${o.source === "slack" ? ' <span class="chip" style="--c:#10204a">via Slack</span>' : ""}<div class="muted">${esc(o.id)}</div></li>`).join("")}</ul>
+   <div class="card"><h2>Officers</h2><ul class="list">${offs.map((o) => `<li><strong>${esc(o.name || names.get(key(o.id)) || o.id)}</strong>${o.source === "slack" ? ' <span class="chip" style="--c:#10204a">via Slack</span>' : ""}<div class="muted">${esc(o.id)}</div></li>`).join("")}</ul>
     <p class="muted">Officers are everyone in your Slack workspace (once Slack sync is set up) plus anyone added by hand in the Firebase console (Firestore, <code>officers</code> collection).</p></div>
   </div>`;
 }
@@ -338,8 +346,8 @@ function viewProfile() {
 }
 // Only approved people count: anyone can type someone else's number, and nothing here can prove who owns it.
 const optIns = () => {
-  const ok = new Set([...state.members, ...state.officers].map((d) => d.id.toLowerCase()));
-  return state.smsList.filter((x) => x.consent && ok.has(x.id.toLowerCase())).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const ok = new Set([...state.members, ...state.officers].map((d) => key(d.id)));
+  return state.smsList.filter((x) => x.consent && ok.has(key(x.id))).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 };
 function smsListCard() {
   if (!C.sms?.enabled) return "";
