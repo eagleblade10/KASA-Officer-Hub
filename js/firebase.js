@@ -36,6 +36,9 @@ const mem = {
   ],
   members: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)" }],
   links: [],
+  public: [],
+  settings: [],
+  publicNotes: [{ id: "n1", title: "General meeting", date: iso(-3), team: "all", url: "#", slides: "", created: 1 }],
   publicLinks: [
     { id: "l1", name: "Join our Discord", url: "#", created: 1 },
     { id: "l2", name: "Membership dues", url: "#", created: 2 },
@@ -46,7 +49,7 @@ const mem = {
     { id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
     { id: "stranger@example.com", email: "stranger@example.com", name: "Not approved (demo)", phone: "+15125550000", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
   ],
-  officers: [{ id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" }],
+  officers: [{ id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" }, { id: "console@example.com", email: "console@example.com", name: "Added in Firebase (demo)" }],
   messages: [
     { id: "m1", from: "jane@utexas.edu", to: "demo@example.com", participants: ["jane@utexas.edu", "demo@example.com"], text: "Hey! Can Media cover the showcase on the 21st?", created: Date.now() - 3600e3 },
   ],
@@ -74,8 +77,10 @@ export function watchWhere(c, field, value, cb) {
 }
 export async function addItem(c, data) {
   if (configured) return F.addDoc(F.collection(db, c), { ...data, created: F.serverTimestamp() });
-  mem[c].push({ id: "x" + Math.random(), ...data, created: Date.now() });
+  const id = "x" + Math.random();
+  mem[c].push({ id, ...data, created: Date.now() });
   emit(c);
+  return { id };
 }
 export async function updateItem(c, id, data) {
   if (configured) return F.updateDoc(F.doc(db, c, id), data);

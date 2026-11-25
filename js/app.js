@@ -1,17 +1,19 @@
 import { CONFIG as C } from "./config.js";
 import * as fb from "./firebase.js";
 import * as drive from "./drive.js";
+import { applySettings } from "./settings.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const url = (u) => (/^https?:\/\//i.test(u || "") ? esc(u) : "#");
-const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], publicLinks: [], publicNotes: [], pages: [], mirrored: false, preview: false, canPreview: false, slack: null, slackErr: "", slackLoading: false };
+const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], publicLinks: [], publicNotes: [], pages: [], pubDoc: null, setDoc: null, mirrored: false, preview: false, canPreview: false, slack: null, slackErr: "", slackLoading: false };
 const team = (id) => C.teams.find((t) => t.id === id);
 const chip = (id) => { const t = team(id); return t ? `<span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span>` : id === "all" ? `<span class="chip">All org</span>` : ""; };
 
 document.documentElement.style.setProperty("--accent", C.accent);
 document.documentElement.style.setProperty("--red", C.accent2);
-document.title = C.orgName + " Hub";
+const pageTitle = () => (/hub/i.test(C.orgName) ? C.orgName : C.orgName + " Hub");
+document.title = pageTitle();
 $("#brand").textContent = C.orgName;
 $("#demo").hidden = fb.configured;
 
@@ -59,7 +61,7 @@ const teamOpts = (all) => [...(all ? [{ value: "all", label: "All org" }] : []),
 
 // ---------- views ----------
 const MEMBER_TABS = ["home", "calendar", "profile"]; // everything a plain member can open
-const ROUTES = [["home", "Home"], ["start", "Start here"], ["teams", "Teams"], ["projects", "Projects"], ["notes", "Meeting notes"], ["messages", "Messages"], ["drive", "Drive"], ["slack", "Channels"], ["people", "People"], ["profile", "Profile"], ["calendar", "Calendar"], ["requests", "Requests"]];
+const ROUTES = [["home", "Home"], ["start", "Start here"], ["teams", "Teams"], ["projects", "Projects"], ["notes", "Meeting notes"], ["messages", "Messages"], ["drive", "Drive"], ["slack", "Channels"], ["people", "People"], ["settings", "Settings"], ["profile", "Profile"], ["calendar", "Calendar"], ["requests", "Requests"]];
 const officerBtn = (label, action, extra = "") => (state.officer ? `<button class="btn pri sm" data-a="${action}" ${extra}>${label}</button>` : "");
 const delBtn = (coll, id) => (state.officer ? `<button class="btn sm del" data-a="del" data-c="${coll}" data-id="${esc(id)}">Delete</button>` : "");
 
@@ -393,8 +395,8 @@ function viewPeople() {
    <div class="card"><h2>Members <span class="badge">${members.length}</span></h2>
     ${members.length ? `<ul class="list">${members.map((m) => `<li><div class="row">${who(m)}<span><button class="btn sm" data-a="ppl-promote" data-id="${esc(m.id)}" data-n="${esc(m.name || "")}">Make officer</button> <button class="btn sm del" data-a="ppl-remove" data-id="${esc(m.id)}">Remove</button></span></div></li>`).join("")}</ul>` : `<p class="empty">No members yet.</p>`}</div>
    ${smsListCard()}
-   <div class="card"><h2>Officers <span class="badge">${offs.length}</span></h2><ul class="list">${offs.map((o) => `<li><div class="row"><span><strong>${esc(o.name || names.get(key(o.id)) || o.id)}</strong>${src(o)}<div class="muted">${esc(o.id)}</div></span>${o.source === "hub" ? `<span><button class="btn sm" data-a="ppl-demote" data-id="${esc(o.id)}" data-n="${esc(o.name || "")}">Make member</button> <button class="btn sm del" data-a="ppl-rm-officer" data-id="${esc(o.id)}">Remove</button></span>` : ""}</div></li>`).join("")}</ul>
-    <p class="muted">Officers come from your Slack workspace (once Slack sync is set up), from people you add here, and from anyone added by hand in Firebase. You can only change the ones added here.</p></div>
+   <div class="card"><h2>Officers <span class="badge">${offs.length}</span></h2><ul class="list">${offs.map((o) => `<li><div class="row"><span><strong>${esc(o.name || names.get(key(o.id)) || o.id)}</strong>${src(o)}<div class="muted">${esc(o.id)}</div></span>${o.source !== "slack" && key(o.id) !== me() ? `<span><button class="btn sm" data-a="ppl-demote" data-id="${esc(o.id)}" data-n="${esc(o.name || "")}">Make member</button> <button class="btn sm del" data-a="ppl-rm-officer" data-id="${esc(o.id)}">Remove</button></span>` : ""}</div></li>`).join("")}</ul>
+    <p class="muted">Officers come from your Slack workspace (once Slack sync is set up), from people you add here, and from anyone added by hand in Firebase. Slack officers are managed in Slack; you can change the rest here (not yourself).</p></div>
   </div>`;
 }
 async function peopleAction(a, b) {
@@ -624,7 +626,7 @@ function renderNow() {
   if (!state.user || state.pending) return;
   let [r, arg] = (location.hash.slice(1) || "home").split("/");
   if (!state.officer && !MEMBER_TABS.includes(r)) r = "home";
-  const views = { home: state.officer ? viewHome : viewMemberHome, teams: () => viewTeams(arg), projects: () => viewProjects(arg), notes: viewNotes, calendar: viewCalendar, requests: viewRequests, messages: () => viewMessages(arg), drive: viewDrive, people: viewPeople, profile: viewProfile, slack: viewSlack, start: viewStart };
+  const views = { home: state.officer ? viewHome : viewMemberHome, teams: () => viewTeams(arg), projects: () => viewProjects(arg), notes: viewNotes, calendar: viewCalendar, requests: viewRequests, messages: () => viewMessages(arg), drive: viewDrive, people: viewPeople, settings: viewSettings, profile: viewProfile, slack: viewSlack, start: viewStart };
   if (r === "drive" && drv.need && drive.connected()) { drv.need = false; loadDrive(false); }
   if ((r === "slack" || r === "teams" || r === "start") && state.officer && state.slack === null && !state.slackLoading) loadSlack();
   const keep = document.activeElement?.id, dmv = $("#dmtext")?.value;
@@ -668,6 +670,7 @@ document.addEventListener("click", async (e) => {
   if (b.tagName === "A") e.preventDefault();
   if (a.startsWith("drv-")) return driveAction(a, b);
   if (a.startsWith("ppl-")) return peopleAction(a, b);
+  if (a.startsWith("set-")) return settingsAction(a, b);
   if (a.startsWith("sms-")) return smsAction(a, b);
   if (a.startsWith("proj-")) return projAction(a, b);
   if (a === "del" && confirm("Delete this item?")) { await fb.removeItem(b.dataset.c, b.dataset.id); if (b.dataset.c === "notes") await fb.removeItem("publicNotes", b.dataset.id).catch(() => {}); }
@@ -698,6 +701,95 @@ window.addEventListener("watch-error", (e) => {
   el.textContent = `Couldn't load: ${[...failed].join(", ")}. Check your connection, and make sure the latest firestore.rules are published in Firebase.`;
 });
 
+// ---------- Settings: what used to live in config.js, now editable by officers in the hub ----------
+const applyAll = () => { applySettings(C, state.pubDoc, state.setDoc); $("#brand").textContent = C.orgName; document.title = pageTitle(); };
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "team";
+const driveId = (s) => (String(s).match(/folders\/([\w-]+)/) || [, String(s).trim()])[1]; // accepts the folder's web address or just its ID
+const parseMs = (t) => t.split("\n").map((l) => l.match(/^\s*(\d+)\s*\|\s*(.+?)\s*$/)).filter(Boolean).map((m) => ({ weeks: Number(m[1]), label: m[2] })).sort((a, b) => b.weeks - a.weeks);
+async function saveSettings(patch) {
+  Object.assign(C, patch);
+  const pub = { orgName: C.orgName, tagline: C.tagline, about: C.about, meetingInfo: C.meetingInfo, joinUrl: C.joinUrl, smsDisclosure: C.sms?.disclosure || "", slackEndpoint: C.slack?.endpoint || "", teams: C.teams.map(({ id, name, color, desc }) => ({ id, name, color, desc })) };
+  const set = { calendarId: C.calendarId, calendarTimezone: C.calendarTimezone, driveRootId: C.driveRootId, turnaround: C.turnaround, forms: C.forms, milestones: C.milestones, teams: C.teams };
+  await fb.setItem("public", "site", pub);
+  await fb.setItem("settings", "site", set);
+  state.pubDoc = pub; state.setDoc = set;
+  $("#brand").textContent = C.orgName; document.title = pageTitle();
+  render();
+}
+const teamFields = (t = {}) => [
+  { name: "name", label: "Team name", required: true, value: t.name },
+  { name: "color", label: "Color", type: "color", value: t.color || "#10204a" },
+  { name: "desc", label: "What the team does", value: t.desc },
+  { name: "slack", label: "Slack channel link (optional)", type: "url", value: t.slack === "#" ? "" : t.slack },
+  { name: "drive", label: "Drive folder link (optional)", type: "url", value: t.drive === "#" ? "" : t.drive },
+];
+const formFields = (f = {}) => [
+  { name: "name", label: "Form name", required: true, value: f.name },
+  { name: "desc", label: "What it's for", value: f.desc },
+  { name: "url", label: "Link", type: "url", required: true, value: f.url },
+];
+function viewSettings() {
+  if (!state.officer) return `<p class="empty">Officers only.</p>`;
+  const kv = (k, v) => `<div class="row" style="justify-content:flex-start;align-items:flex-start;gap:8px;flex-wrap:nowrap;margin:4px 0"><span class="muted" style="min-width:96px;flex:none">${k}</span><span style="min-width:0">${esc(v) || '<span class="muted">not set</span>'}</span></div>`;
+  const btn = (label, a, extra = "") => `<button class="btn sm" data-a="${a}" ${extra}>${label}</button>`;
+  return `<h1>Settings</h1><p class="muted">Change how the hub looks and what it links to. Saved for everyone, and no need to touch GitHub or Firebase. The first save keeps everything currently in <code>config.js</code> as your starting point.</p>
+  <div class="grid cols-2">
+   <div class="card"><div class="row"><h2>Organization</h2>${btn("Edit", "set-org")}</div>${kv("Name", C.orgName)}${kv("Tagline", C.tagline)}${kv("About", C.about)}${kv("Meetings", C.meetingInfo)}${kv("Join link", C.joinUrl === "#" ? "" : C.joinUrl)}${kv("Turnaround", C.turnaround)}</div>
+   <div class="card"><div class="row"><h2>Calendar and Drive</h2>${btn("Edit", "set-cal")}</div>${kv("Calendar", C.calendarId)}${kv("Time zone", C.calendarTimezone)}${kv("Drive folder", C.driveRootId)}</div>
+   <div class="card"><div class="row"><h2>Teams</h2>${btn("+ Add team", "set-team-add")}</div>
+    <ul class="list">${C.teams.map((t) => `<li><div class="row"><span><span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span> <span class="muted">${esc(t.desc || "")}</span></span><span>${btn("Edit", "set-team-edit", `data-id="${esc(t.id)}"`)} <button class="btn sm del" data-a="set-team-del" data-id="${esc(t.id)}">Delete</button></span></div></li>`).join("")}</ul></div>
+   <div class="card"><div class="row"><h2>Request forms</h2>${btn("+ Add form", "set-form-add")}</div>
+    ${C.forms.length ? `<ul class="list">${C.forms.map((f, i) => `<li><div class="row"><span><strong>${esc(f.name)}</strong><div class="muted">${esc(f.desc || "")}</div></span><span>${btn("Edit", "set-form-edit", `data-i="${i}"`)} <button class="btn sm del" data-a="set-form-del" data-i="${i}">Delete</button></span></div></li>`).join("")}</ul>` : `<p class="empty">No forms yet.</p>`}</div>
+   <div class="card"><div class="row"><h2>Text-alert wording</h2>${btn("Edit", "set-sms")}</div><p class="muted" style="white-space:pre-wrap">${esc(C.sms?.disclosure || "")}</p></div>
+   <div class="card"><div class="row"><h2>Slack connection</h2>${btn("Edit", "set-slack")}</div>${kv("Worker address", C.slack?.endpoint)}<p class="muted">Leave it blank to hide the Channels tab.</p></div>
+   <div class="card"><div class="row"><h2>Project checkpoints</h2>${btn("Edit", "set-ms")}</div>${C.milestones.map((m) => kv(m.weeks + " wk before", m.label)).join("")}</div>
+   <div class="card"><h2>Start over</h2><p class="muted">Delete everything saved on this page and go back to the defaults in <code>config.js</code>.</p><button class="btn sm del" data-a="set-reset">Reset to defaults</button></div>
+  </div>`;
+}
+async function settingsAction(a, b) {
+  const id = b.dataset.id, i = Number(b.dataset.i);
+  try {
+    if (a === "set-org") openForm("Organization", [
+      { name: "orgName", label: "Organization name", required: true, value: C.orgName },
+      { name: "tagline", label: "Tagline", value: C.tagline },
+      { name: "about", label: "About (shown on the public page)", type: "textarea", rows: 4, value: C.about },
+      { name: "meetingInfo", label: "Meeting info (shown on the public page)", value: C.meetingInfo },
+      { name: "joinUrl", label: "Join or interest-form link", type: "url", value: C.joinUrl === "#" ? "" : C.joinUrl },
+      { name: "turnaround", label: "Turnaround note shown with the request forms", value: C.turnaround },
+    ], (v) => saveSettings({ ...v, joinUrl: v.joinUrl || "#" }));
+    else if (a === "set-cal") openForm("Calendar and Drive", [
+      { name: "calendarId", label: "Google Calendar ID (Calendar settings > Integrate calendar)", value: C.calendarId },
+      { name: "calendarTimezone", label: "Time zone", value: C.calendarTimezone },
+      { name: "driveRootId", label: "Drive folder (paste its web address or its ID)", value: C.driveRootId },
+    ], (v) => saveSettings({ calendarId: v.calendarId, calendarTimezone: v.calendarTimezone || "America/Chicago", driveRootId: driveId(v.driveRootId) }));
+    else if (a === "set-sms") openForm("Text-alert wording", [{ name: "disclosure", label: "Exactly what people agree to. {org} becomes your organization's name. Each person's agreement saves the wording they saw.", type: "textarea", rows: 6, required: true, value: C.sms?.disclosure }], (v) => saveSettings({ sms: { ...C.sms, disclosure: v.disclosure } }));
+    else if (a === "set-slack") openForm("Slack connection", [{ name: "endpoint", label: "Cloudflare Worker address (https://…workers.dev). Blank hides the Channels tab.", type: "url", value: C.slack?.endpoint }], (v) => saveSettings({ slack: { ...C.slack, endpoint: v.endpoint } }));
+    else if (a === "set-ms") openForm("Project checkpoints", [{ name: "ms", label: "One per line: weeks before the due date | what to do. Changing these can shift which checkpoints show as done on existing projects.", type: "textarea", rows: 7, value: C.milestones.map((m) => `${m.weeks} | ${m.label}`).join("\n") }], (v) => {
+      const ms = parseMs(v.ms);
+      if (!ms.length) throw new Error("Use lines like: 6 | Kickoff and budget plan");
+      return saveSettings({ milestones: ms });
+    });
+    else if (a === "set-team-add") openForm("Add a team", teamFields(), (v) => {
+      let tid = slug(v.name);
+      while (C.teams.some((t) => t.id === tid)) tid += "x";
+      return saveSettings({ teams: [...C.teams, { id: tid, name: v.name, color: v.color, desc: v.desc, slack: v.slack || "#", drive: v.drive || "#" }] });
+    });
+    else if (a === "set-team-edit") openForm("Edit team", teamFields(C.teams.find((t) => t.id === id)), (v) => saveSettings({ teams: C.teams.map((t) => (t.id === id ? { ...t, ...v, slack: v.slack || "#", drive: v.drive || "#" } : t)) }));
+    else if (a === "set-team-del") {
+      if (C.teams.length < 2) { alert("Keep at least one team."); return; }
+      if (confirm("Delete this team? Projects that used it will just stop showing its label.")) await saveSettings({ teams: C.teams.filter((t) => t.id !== id) });
+    }
+    else if (a === "set-form-add") openForm("Add a request form", formFields(), (v) => saveSettings({ forms: [...C.forms, { ...v, embed: "" }] }));
+    else if (a === "set-form-edit") openForm("Edit request form", formFields(C.forms[i]), (v) => saveSettings({ forms: C.forms.map((f, j) => (j === i ? { ...f, ...v } : f)) }));
+    else if (a === "set-form-del") { if (confirm("Delete this form?")) await saveSettings({ forms: C.forms.filter((_, j) => j !== i) }); }
+    else if (a === "set-reset") {
+      if (!confirm("Delete everything saved on the Settings page and go back to the defaults in config.js?")) return;
+      await fb.removeItem("public", "site"); await fb.removeItem("settings", "site");
+      location.reload();
+    }
+  } catch (err) { alert("Could not save: " + err.message); }
+}
+
 // ---------- boot ----------
 fb.onAuth(async (user) => {
   if (!user) {
@@ -706,6 +798,7 @@ fb.onAuth(async (user) => {
     return;
   }
   state.user = user;
+  try { state.pubDoc = await fb.getItem("public", "site"); applyAll(); } catch {} // org name, wording and Slack address officers saved in the hub
   await fb.upsertUser(user).catch(() => {});
   if (fb.configured && C.slack?.endpoint) { // Slack membership decides officer status; if this fails, nothing changes
     try { await fetch(C.slack.endpoint.replace(/\/$/, "") + "/sync", { method: "POST", headers: { Authorization: "Bearer " + (await fb.idToken()) }, signal: AbortSignal.timeout(8000) }); } catch {} // 8s cap so a slow Slack can't freeze sign-in
@@ -733,6 +826,7 @@ fb.onAuth(async (user) => {
   }
   state.officer = role === "officer";
   state.canPreview = state.officer;
+  try { state.setDoc = await fb.getItem("settings", "site"); applyAll(); } catch {} // calendar, Drive, forms, team links, checkpoints
   if (state.officer) {
     fb.watchDMs(user.email.toLowerCase(), (d) => { state.messages = d; render(); });
     const seen = new Set(), trySync = () => { if (seen.has("notes") && seen.has("publicNotes") && !state.mirrored) { state.mirrored = true; syncMirrors().catch((e) => console.error("notes sync", e)); } };
