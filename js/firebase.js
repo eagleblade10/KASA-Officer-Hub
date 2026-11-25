@@ -27,7 +27,8 @@ const mem = {
     { id: "p4", name: "General meeting: Nov 4", owner: "events", parent: "p3", needsFrom: [], due: iso(-5), links: [{ name: "Slides", url: "#" }], done: [] },
     { id: "p5", name: "General meeting: Nov 18", owner: "events", parent: "p3", needsFrom: [], due: iso(9), links: [], done: [] },
   ],
-  users: [ // sign-up requests
+  users: [ // sign-up requests (the name is the person's nickname)
+    { id: "demo@example.com", email: "demo@example.com", name: "Demo Officer" },
     { id: "sam@utexas.edu", email: "sam@utexas.edu", name: "Sam (demo)" },
     { id: "alex@utexas.edu", email: "alex@utexas.edu", name: "Alex (demo)" },
   ],
@@ -83,9 +84,11 @@ export async function removeItem(c, id) {
   emit(c);
 }
 
+// Creates the sign-up record once. Never overwrites it, so a nickname the person chose is kept.
 export async function upsertUser(user) {
   if (!configured) return;
-  await F.setDoc(F.doc(db, "users", user.email.toLowerCase()), { email: user.email.toLowerCase(), name: user.displayName || user.email }, { merge: true });
+  const email = user.email.toLowerCase(), ref = F.doc(db, "users", email);
+  if (!(await F.getDoc(ref)).exists()) await F.setDoc(ref, { email, name: user.displayName || email });
 }
 export function watchDMs(email, cb) {
   if (configured) return F.onSnapshot(F.query(F.collection(db, "messages"), F.where("participants", "array-contains", email)), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => fail("messages", e));

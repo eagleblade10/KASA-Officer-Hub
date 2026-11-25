@@ -5,7 +5,7 @@ import * as drive from "./drive.js";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const url = (u) => (/^https?:\/\//i.test(u || "") ? esc(u) : "#");
-const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, smsList: [], links: [], slack: null, slackErr: "", slackLoading: false };
+const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], slack: null, slackErr: "", slackLoading: false };
 const team = (id) => C.teams.find((t) => t.id === id);
 const chip = (id) => { const t = team(id); return t ? `<span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span>` : id === "all" ? `<span class="chip">All org</span>` : ""; };
 
@@ -267,13 +267,15 @@ async function driveAction(a, b) {
 // ---------- People (officers approve members) ----------
 function rebuildDir() {
   const seen = new Set();
-  state.users = [...state.officers, ...state.members].filter((d) => !seen.has(d.id) && seen.add(d.id)).map((d) => ({ email: d.id, name: d.name || d.id }));
+  state.users = [...state.officers, ...state.members].map((d) => ({ email: d.id.toLowerCase(), name: d.name || d.id })).filter((u) => !seen.has(u.email) && seen.add(u.email));
 }
 function viewPeople() {
   if (!state.officer) return `<p class="empty">Officers only.</p>`;
-  const have = new Set([...state.members, ...state.officers].map((d) => d.id));
-  const pending = state.signups.filter((u) => !have.has(u.id)).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  const members = state.members.filter((m) => !state.officers.some((o) => o.id === m.id)).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const uniq = (l) => l.filter((d, i) => l.findIndex((x) => x.id.toLowerCase() === d.id.toLowerCase()) === i); // same email in different capitals = one person
+  const offs = uniq(state.officers), mems = uniq(state.members);
+  const have = new Set([...offs, ...mems].map((d) => d.id.toLowerCase())), offIds = new Set(offs.map((o) => o.id.toLowerCase()));
+  const pending = uniq(state.signups).filter((u) => !have.has(u.id.toLowerCase())).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const members = mems.filter((m) => !offIds.has(m.id.toLowerCase())).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   return `<h1>People</h1><p class="muted">Anyone can sign in with Google, but they see nothing until you approve them here.</p>
   <div class="grid cols-2">
    <div class="card"><h2>Waiting for approval <span class="badge">${pending.length}</span></h2>
@@ -282,7 +284,7 @@ function viewPeople() {
    <div class="card"><h2>Members <span class="badge">${members.length}</span></h2>
     ${members.length ? `<ul class="list">${members.map((m) => `<li><div class="row"><span><strong>${esc(m.name || m.id)}</strong><div class="muted">${esc(m.id)}</div></span><button class="btn sm del" data-a="ppl-remove" data-id="${esc(m.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="empty">No members yet.</p>`}</div>
    ${smsListCard()}
-   <div class="card"><h2>Officers</h2><ul class="list">${state.officers.map((o) => `<li><strong>${esc(o.name || o.id)}</strong>${o.source === "slack" ? ' <span class="chip" style="--c:#10204a">via Slack</span>' : ""}<div class="muted">${esc(o.id)}</div></li>`).join("")}</ul>
+   <div class="card"><h2>Officers</h2><ul class="list">${offs.map((o) => `<li><strong>${esc(o.name || o.id)}</strong>${o.source === "slack" ? ' <span class="chip" style="--c:#10204a">via Slack</span>' : ""}<div class="muted">${esc(o.id)}</div></li>`).join("")}</ul>
     <p class="muted">Officers are everyone in your Slack workspace (once Slack sync is set up) plus anyone added by hand in the Firebase console (Firestore, <code>officers</code> collection).</p></div>
   </div>`;
 }
@@ -295,6 +297,28 @@ async function peopleAction(a, b) {
 }
 
 // ---------- Text alerts (consent capture + officer export) ----------
+// ---------- Nickname: the name other members see ----------
+const myName = () => state.nick || state.user.displayName || me();
+const nickInner = () => `<h2>Your nickname</h2><p class="muted">This is the name other members see. You can change it any time under Profile.</p>
+  <form id="nickform" class="row" style="flex-wrap:nowrap"><input name="nick" required maxlength="40" placeholder="Nickname" value="${esc(state.nick)}"><button class="btn pri">Save</button></form>
+  ${state.nick ? `<p class="muted">Currently shown as <strong>${esc(state.nick)}</strong>.</p>` : ""}`;
+document.addEventListener("submit", async (e) => {
+  if (e.target.id !== "nickform") return;
+  e.preventDefault();
+  const name = e.target.elements.nick.value.trim().slice(0, 40);
+  if (!name) return;
+  try {
+    await fb.updateItem("users", me(), { name });
+    // keep the member directory and text-alert record in step; a failure here doesn't undo the nickname
+    const extra = [];
+    if (!state.pending) extra.push(fb.updateItem(state.officer ? "officers" : "members", me(), { name }));
+    if (state.sms) extra.push(fb.updateItem("smsConsent", me(), { name }));
+    await Promise.allSettled(extra);
+    state.nick = name;
+    if (state.pending) $("#nickcard").innerHTML = nickInner(); else render();
+  } catch (err) { alert("Could not save: " + err.message); }
+});
+
 const normPhone = (s) => { const d = String(s).replace(/\D/g, ""); return d.length === 10 ? "+1" + d : d.length === 11 && d[0] === "1" ? "+" + d : null; };
 const disclosure = () => C.sms.disclosure.replace("{org}", C.orgName);
 function smsInner() {
@@ -308,13 +332,14 @@ function smsInner() {
 }
 const refreshSms = () => { if (state.pending) $("#smscard").innerHTML = smsInner(); else render(); };
 function viewProfile() {
-  return `<h1>Profile</h1><div class="card"><strong>${esc(state.user.displayName || "")}</strong><div class="muted">${esc(state.user.email)} · ${state.officer ? "officer" : "member"}</div></div>
+  return `<h1>Profile</h1><div class="card"><strong>${esc(myName())}</strong><div class="muted">${esc(state.user.email)} · ${state.officer ? "officer" : "member"}</div></div>
+  <div class="card" style="margin-top:16px">${nickInner()}</div>
   ${C.sms?.enabled ? `<div class="card" id="smscard" style="margin-top:16px">${smsInner()}</div>` : ""}`;
 }
 // Only approved people count: anyone can type someone else's number, and nothing here can prove who owns it.
 const optIns = () => {
-  const ok = new Set([...state.members, ...state.officers].map((d) => d.id));
-  return state.smsList.filter((x) => x.consent && ok.has(x.id)).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const ok = new Set([...state.members, ...state.officers].map((d) => d.id.toLowerCase()));
+  return state.smsList.filter((x) => x.consent && ok.has(x.id.toLowerCase())).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 };
 function smsListCard() {
   if (!C.sms?.enabled) return "";
@@ -347,7 +372,7 @@ document.addEventListener("submit", async (e) => {
   const phone = normPhone(e.target.elements.phone.value);
   if (!phone) { alert("Enter a valid 10-digit US mobile number."); return; }
   if (!e.target.elements.agree.checked) return;
-  const data = { email: me(), name: state.user.displayName || me(), phone, consent: true, disclosure: disclosure(), consentedAt: new Date().toISOString() };
+  const data = { email: me(), name: myName(), phone, consent: true, disclosure: disclosure(), consentedAt: new Date().toISOString() };
   try { await fb.setItem("smsConsent", me(), data); state.sms = { id: me(), ...data }; refreshSms(); } catch (err) { alert("Could not save: " + err.message); }
 });
 
@@ -492,7 +517,7 @@ fb.onAuth(async (user) => {
     return;
   }
   state.user = user;
-  fb.upsertUser(user).catch(() => {});
+  await fb.upsertUser(user).catch(() => {});
   if (fb.configured && C.slack?.endpoint) { // Slack membership decides officer status; if this fails, nothing changes
     try { await fetch(C.slack.endpoint.replace(/\/$/, "") + "/sync", { method: "POST", headers: { Authorization: "Bearer " + (await fb.idToken()) }, signal: AbortSignal.timeout(8000) }); } catch {} // 8s cap so a slow Slack can't freeze sign-in
   }
@@ -506,10 +531,12 @@ fb.onAuth(async (user) => {
     return;
   }
   try { state.sms = await fb.getItem("smsConsent", user.email.toLowerCase()); } catch { state.sms = null; }
+  try { state.nick = (await fb.getItem("users", user.email.toLowerCase()))?.name || ""; } catch { state.nick = ""; }
   if (role === "pending") {
     state.pending = true;
     $("#nav").innerHTML = ""; $("#who").innerHTML = "";
-    $("#view").innerHTML = `<div class="hero"><h1>Waiting for approval</h1><p>You're signed in as ${esc(user.email)}. An officer needs to approve your account before you can see the hub.</p><button class="btn pri" id="chk">Check again</button> <button class="btn" id="so">Sign out</button></div><div class="card" id="smscard" style="max-width:520px;margin:0 auto 40px"></div>`;
+    $("#view").innerHTML = `<div class="hero"><h1>Waiting for approval</h1><p>You're signed in as ${esc(user.email)}. An officer needs to approve your account before you can see the hub.</p><button class="btn pri" id="chk">Check again</button> <button class="btn" id="so">Sign out</button></div><div class="card" id="nickcard" style="max-width:520px;margin:0 auto 16px"></div><div class="card" id="smscard" style="max-width:520px;margin:0 auto 40px"></div>`;
+    $("#nickcard").innerHTML = nickInner();
     $("#smscard").innerHTML = smsInner();
     $("#chk").onclick = () => location.reload();
     $("#so").onclick = async () => { await fb.signOutUser(); location.href = "index.html"; };
