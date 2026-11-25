@@ -61,7 +61,40 @@ const teamOpts = (all) => [...(all ? [{ value: "all", label: "All org" }] : []),
 
 // ---------- views ----------
 const MEMBER_TABS = ["home", "calendar", "profile"]; // everything a plain member can open
-const ROUTES = [["home", "Home"], ["start", "Start here"], ["teams", "Teams"], ["projects", "Projects"], ["notes", "Meeting notes"], ["messages", "Messages"], ["drive", "Drive"], ["slack", "Channels"], ["people", "People"], ["settings", "Settings"], ["profile", "Profile"], ["calendar", "Calendar"], ["requests", "Requests"]];
+// ---------- Top bar: Start here, Home, then Operations / Communications / Settings menus ----------
+const NAV_LABEL = { start: "Start here", home: "Home", teams: "Teams", projects: "Projects", notes: "Meeting notes", drive: "Drive", requests: "Requests", calendar: "Calendar", slack: "Channels", messages: "Messages", people: "People", profile: "Profile", settings: "Hub settings" };
+const NAV_GROUPS = [["Operations", ["teams", "projects", "notes", "drive", "requests", "calendar"]], ["Communications", ["slack", "messages", "people"]], ["Settings", ["profile", "settings"]]];
+const navVisible = (k) => (k === "slack" ? !!(C.slack?.endpoint || !fb.configured) : k === "people" || k === "settings" ? isSenior() : true);
+let openMenu = "";
+function navHtml(r, unread) {
+  const link = (k) => `<a href="#${k}" class="${k === r ? "on" : ""}">${NAV_LABEL[k]}${k === "messages" && unread ? ` <span class="badge">${unread}</span>` : ""}</a>`;
+  if (!state.officer) return MEMBER_TABS.map(link).join(""); // members: Home, Calendar, Profile
+  return link("start") + link("home") + NAV_GROUPS.map(([g, ks]) => {
+    const shown = ks.filter(navVisible);
+    if (!shown.length) return "";
+    return `<div class="grp"><button type="button" class="grpbtn ${shown.includes(r) ? "on" : ""}" data-g="${g}" aria-expanded="false">${g} ▾${g === "Communications" && unread ? ` <span class="badge">${unread}</span>` : ""}</button><div class="menu" role="menu" hidden>${shown.map(link).join("")}</div></div>`;
+  }).join("");
+}
+// The menu is positioned from the button, so the sideways-scrolling tab strip can't clip it.
+function toggleMenu(g, forceOpen) {
+  document.querySelectorAll("#nav .menu").forEach((m) => { m.hidden = true; });
+  document.querySelectorAll("#nav .grpbtn").forEach((b) => b.setAttribute("aria-expanded", "false"));
+  const btn = g && $(`#nav .grpbtn[data-g="${g}"]`);
+  if (!btn || (openMenu === g && !forceOpen)) { openMenu = ""; return; }
+  const menu = btn.nextElementSibling, rect = btn.getBoundingClientRect();
+  menu.hidden = false; btn.setAttribute("aria-expanded", "true");
+  menu.style.top = rect.bottom + 4 + "px";
+  menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8)) + "px";
+  openMenu = g;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".grpbtn");
+  if (b) { toggleMenu(b.dataset.g); return; }
+  if (openMenu) toggleMenu(""); // any other click, including a menu link, closes it
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") toggleMenu(""); });
+window.addEventListener("resize", () => toggleMenu(""));
+$("#nav").addEventListener("scroll", () => toggleMenu(""));
 const officerBtn = (label, action, extra = "") => (state.officer ? `<button class="btn pri sm" data-a="${action}" ${extra}>${label}</button>` : "");
 const delBtn = (coll, id) => (state.officer ? `<button class="btn sm del" data-a="del" data-c="${coll}" data-id="${esc(id)}">Delete</button>` : "");
 
@@ -368,7 +401,7 @@ function rebuildDir() {
 // Senior officers have full access. Junior officers can do only what the senior officers of their team allow
 // (set on the team's page). The officer titled "President" decides everyone's title, level and team, and who is an officer.
 // No level set = senior, so officers from before levels existed keep full access. (The database rules enforce all of this.)
-const DEFAULT_TITLES = ["President", "Vice President", "Treasurer", "Secretary", "Director", "Associate"];
+const DEFAULT_TITLES = ["President", "Vice President", "Treasurer", "Secretary"]; // teams are added to the Role dropdown automatically
 const titles = () => { const t = C.officerTitles?.length ? C.officerTitles : DEFAULT_TITLES; return t.includes("President") ? t : ["President", ...t]; };
 const myOfficer = () => state.officers.find((o) => key(o.id) === me());
 const isPresident = () => state.officer && myOfficer()?.title === "President";
@@ -381,12 +414,19 @@ const canDates = (p) => isSenior() || juniorCan("editProjects", p.owner); // edi
 const canRoster = (team) => manages(team) || juniorCan("manageTeam", team); // add officers to a team
 
 const LEVELS = [{ value: "senior", label: "Senior officer (full access)" }, { value: "junior", label: "Junior officer (only what their team's senior officers allow)" }];
-const teamSelectOpts = () => [{ value: "", label: "Whole organization (no single team)" }, ...C.teams.map((t) => ({ value: t.id, label: t.name }))];
-const titleOpts = (cur) => [{ value: "", label: "(no role)" }, ...[...new Set([...titles(), ...(cur ? [cur] : [])])].map((t) => ({ value: t, label: t }))];
+// One Role dropdown holds the organization-level roles (President, Treasurer…) AND every team.
+// Picking a team puts the officer on that team; picking a role clears the team. (Stored as the officer's title and team.)
+const roleValue = (o) => (o.title === "President" ? "title:President" : o.team ? "team:" + o.team : o.title ? "title:" + o.title : "");
+const splitRole = (v) => (v.startsWith("team:") ? { title: "", team: v.slice(5) } : v.startsWith("title:") ? { title: v.slice(6), team: "" } : { title: "", team: "" });
+const roleLabel = (o) => { const v = roleValue(o); return v.startsWith("team:") ? C.teams.find((t) => t.id === v.slice(5))?.name || v.slice(5) : v.slice(6); };
+const roleOpts = (o = {}) => {
+  const cur = roleValue(o);
+  const opts = [{ value: "", label: "(no role)" }, ...titles().map((t) => ({ value: "title:" + t, label: t })), ...C.teams.map((t) => ({ value: "team:" + t.id, label: t.name }))];
+  return cur && !opts.some((x) => x.value === cur) ? [...opts, { value: cur, label: roleLabel(o) }] : opts; // keep a role that's no longer in the lists
+};
 const officerFields = (o = {}, isSelf = false, defLevel = "senior") => [
-  { name: "title", label: "Role", type: "select", value: o.title || "", options: titleOpts(o.title) },
+  { name: "role", label: "Role (an organization role, or a team)", type: "select", value: roleValue(o), options: roleOpts(o) },
   ...(isSelf ? [] : [{ name: "level", label: "Level", type: "select", value: o.level || defLevel, options: LEVELS }]),
-  { name: "team", label: "Team / department", type: "select", value: o.team || "", options: teamSelectOpts() },
 ];
 
 // "Jane Doe jane@utexas.edu", "jane@utexas.edu" or "Jane <jane@utexas.edu>", one per line. Returns valid people and the lines it couldn't read.
@@ -420,8 +460,8 @@ function viewPeople() {
     const self = key(o.id) === me(), label = o.name || names.get(key(o.id)) || o.id;
     // Only the president gets dropdowns. Everyone else sees the same information as plain labels.
     const controls = pres
-      ? `<span style="display:flex;gap:6px;flex-wrap:wrap">${sel(o, "title", titleOpts(o.title), o.title || "", false)}${sel(o, "level", [{ value: "senior", label: "Senior" }, { value: "junior", label: "Junior" }], lv(o), self)}${sel(o, "team", teamSelectOpts().map((x) => ({ ...x, label: x.value ? x.label : "Whole org" })), o.team || "", false)}</span>`
-      : `<span>${o.title ? `<span class="chip" style="--c:#555">${esc(o.title)}</span>` : ""}<span class="chip" style="--c:${lv(o) === "junior" ? "#8b2a33" : "#10204a"}">${lv(o)}</span>${o.team ? chip(o.team) : ""}</span>`;
+      ? `<span style="display:flex;gap:6px;flex-wrap:wrap">${sel(o, "role", roleOpts(o), roleValue(o), false)}${sel(o, "level", [{ value: "senior", label: "Senior" }, { value: "junior", label: "Junior" }], lv(o), self)}</span>`
+      : `<span>${roleLabel(o) ? `<span class="chip" style="--c:#555">${esc(roleLabel(o))}</span>` : ""}<span class="chip" style="--c:${lv(o) === "junior" ? "#8b2a33" : "#10204a"}">${lv(o)}</span></span>`;
     const btns = pres && !self ? `<span><button class="btn sm" data-a="ppl-demote" data-id="${esc(o.id)}" data-n="${esc(label)}">Make member</button> <button class="btn sm del" data-a="ppl-rm-officer" data-id="${esc(o.id)}">Remove</button></span>` : "";
     return `<li><div class="row"><span><strong>${esc(label)}</strong>${src(o)}<div class="muted">${esc(o.id)}</div></span>${controls}${btns}</div></li>`;
   };
@@ -453,7 +493,7 @@ async function peopleAction(a, b) {
     if (a === "ppl-approve") await addMember(id, name);
     else if (a === "ppl-approve-officer" || a === "ppl-promote") openForm("Make an officer", officerFields({}, false, "junior"), async (v) => {
       if (v.level === "senior" && !confirm(SENIOR_WARNING)) return;
-      await addOfficer(id, name, v);
+      await addOfficer(id, name, { level: v.level, ...splitRole(v.role) });
       if (a === "ppl-promote") await fb.removeItem("members", id);
     });
     else if (a === "ppl-demote") { if (confirm("Make this person a regular member? They'll lose officer access.")) { await blockIfSlack(id); await addMember(id, name); await fb.removeItem("officers", id); } }
@@ -477,7 +517,7 @@ async function peopleAction(a, b) {
         let added = 0;
         for (const p of ok) {
           if (role === "officer" ? isO.has(p.email) : isO.has(p.email) || isM.has(p.email)) { skipped.push(p.email); continue; } // never overwrite someone's existing record or nickname
-          if (role === "officer") await addOfficer(p.email, p.name, v); else await addMember(p.email, p.name);
+          if (role === "officer") await addOfficer(p.email, p.name, { level: v.level, ...splitRole(v.role) }); else await addMember(p.email, p.name);
           added++;
         }
         alert(`Added ${added}.` + (skipped.length ? `\nAlready here, left alone: ${skipped.join(", ")}.` : "") + (bad.length ? `\nCouldn't read: ${bad.join("; ")}.` : "") + "\nThey can sign in with that Google email and go straight in.");
@@ -717,9 +757,10 @@ function renderNow() {
   $("#view").innerHTML = (views[r] || viewHome)();
   const u = unreadCount();
   const navX = $("#nav").scrollLeft;
-  $("#nav").innerHTML = ROUTES.filter(([k]) => state.officer ? (k !== "slack" || C.slack?.endpoint || !fb.configured) && (!["people", "settings"].includes(k) || isSenior()) : MEMBER_TABS.includes(k)).map(([k, l]) => `<a href="#${k}" class="${k === r ? "on" : ""}">${l}${k === "messages" && u ? ` <span class="badge">${u}</span>` : ""}</a>`).join("");
+  $("#nav").innerHTML = navHtml(r, u);
   $("#nav").scrollLeft = navX;
-  const onTab = $("#nav .on"); if (onTab && r !== renderNow.last) onTab.scrollIntoView({ inline: "center", block: "nearest" });
+  if (openMenu) toggleMenu(openMenu, true); // a data refresh shouldn't close a menu you're using
+  const onTab = $("#nav > a.on, #nav .grpbtn.on"); if (onTab && r !== renderNow.last) onTab.scrollIntoView({ inline: "center", block: "nearest" });
   renderNow.last = r;
   if (dmv && $("#dmtext")) $("#dmtext").value = dmv;
   const th = $("#thread"); if (th) th.scrollTop = th.scrollHeight;
@@ -744,9 +785,9 @@ document.addEventListener("submit", async (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.dataset.off) {
-    const { off, f } = e.target.dataset, v = e.target.value;
-    if (key(off) === me() && f === "title" && v !== "President" && !confirm("You'd stop being the President and lose these controls. Continue?")) { render(); return; }
-    fb.updateItem("officers", off, { [f]: v }).catch((err) => { alert("Could not save: " + err.message); render(); });
+    const { off, f } = e.target.dataset, v = e.target.value, change = f === "role" ? splitRole(v) : { [f]: v };
+    if (key(off) === me() && f === "role" && change.title !== "President" && !confirm("You'd stop being the President and lose these controls. Continue?")) { render(); return; }
+    fb.updateItem("officers", off, change).catch((err) => { alert("Could not save: " + err.message); render(); });
   }
   if (e.target.id === "dq") { drv.q = e.target.value.trim(); loadDrive(); }
   if (e.target.id === "dmnew" && e.target.value) location.hash = "#messages/" + encodeURIComponent(e.target.value);
@@ -780,7 +821,7 @@ document.addEventListener("click", async (e) => {
   if (a === "addProj") openForm("New project", projectFields(), (v) => fb.addItem("projects", { ...v, links: [], done: [] }));
   if (a === "addNote") openForm("Add meeting notes", noteFields(), saveNote());
 });
-window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+window.addEventListener("hashchange", () => { openMenu = ""; render(); window.scrollTo(0, 0); });
 
 // A list that can't load (rules not published, access removed) used to just look empty. Say so at the top of the page.
 const failed = new Set();
@@ -833,7 +874,7 @@ function viewSettings() {
    <div class="card"><div class="row"><h2>Text-alert wording</h2>${btn("Edit", "set-sms")}</div><p class="muted" style="white-space:pre-wrap">${esc(C.sms?.disclosure || "")}</p></div>
    <div class="card"><div class="row"><h2>Slack connection</h2>${btn("Edit", "set-slack")}</div>${kv("Worker address", C.slack?.endpoint)}<p class="muted">Leave it blank to hide the Channels tab.</p></div>
    <div class="card"><div class="row"><h2>Project checkpoints</h2>${btn("Edit", "set-ms")}</div>${C.milestones.map((m) => kv(m.weeks + " wk before", m.label)).join("")}</div>
-   <div class="card"><div class="row"><h2>Officer roles</h2>${btn("Edit", "set-titles")}</div><p class="muted">The Role dropdown for officers: ${titles().map(esc).join(" · ")}. Keep <strong>President</strong>, it is what gives the president their powers.</p></div>
+   <div class="card"><div class="row"><h2>Officer roles</h2>${btn("Edit", "set-titles")}</div><p class="muted">Organization roles in the Role dropdown: ${titles().map(esc).join(" · ")}. Every team is added to that dropdown automatically. Keep <strong>President</strong>, it is what gives the president their powers.</p></div>
    <div class="card"><h2>Start over</h2><p class="muted">Delete everything saved on this page and go back to the defaults in <code>config.js</code>.</p><button class="btn sm del" data-a="set-reset">Reset to defaults</button></div>
   </div>`;
 }
@@ -855,7 +896,7 @@ async function settingsAction(a, b) {
     ], (v) => saveSettings({ calendarId: v.calendarId, calendarTimezone: v.calendarTimezone || "America/Chicago", driveRootId: driveId(v.driveRootId) }));
     else if (a === "set-sms") openForm("Text-alert wording", [{ name: "disclosure", label: "Exactly what people agree to. {org} becomes your organization's name. Each person's agreement saves the wording they saw.", type: "textarea", rows: 6, required: true, value: C.sms?.disclosure }], (v) => saveSettings({ sms: { ...C.sms, disclosure: v.disclosure } }));
     else if (a === "set-slack") openForm("Slack connection", [{ name: "endpoint", label: "Cloudflare Worker address (https://…workers.dev). Blank hides the Channels tab.", type: "url", value: C.slack?.endpoint }], (v) => saveSettings({ slack: { ...C.slack, endpoint: v.endpoint } }));
-    else if (a === "set-titles") openForm("Officer roles", [{ name: "t", label: "One role per line, for example Treasurer. Keep President.", type: "textarea", rows: 8, value: titles().join("\n") }], (v) => {
+    else if (a === "set-titles") openForm("Officer roles", [{ name: "t", label: "One organization-level role per line, for example Treasurer. Keep President. Teams are added to the dropdown on their own.", type: "textarea", rows: 8, value: titles().join("\n") }], (v) => {
       const t = v.t.split("\n").map((x) => x.trim().slice(0, 40)).filter(Boolean);
       if (!t.length) throw new Error("Add at least one role.");
       return saveSettings({ officerTitles: t });
