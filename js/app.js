@@ -5,7 +5,7 @@ import * as drive from "./drive.js";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const url = (u) => (/^https?:\/\//i.test(u || "") ? esc(u) : "#");
-const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], publicLinks: [], pages: [], preview: false, canPreview: false, slack: null, slackErr: "", slackLoading: false };
+const state = { user: null, officer: false, announcements: [], projects: [], notes: [], users: [], messages: [], members: [], officers: [], signups: [], pending: false, sms: null, nick: "", smsList: [], links: [], publicLinks: [], publicNotes: [], pages: [], mirrored: false, preview: false, canPreview: false, slack: null, slackErr: "", slackLoading: false };
 const team = (id) => C.teams.find((t) => t.id === id);
 const chip = (id) => { const t = team(id); return t ? `<span class="chip" style="--c:${esc(t.color)}">${esc(t.name)}</span>` : id === "all" ? `<span class="chip">All org</span>` : ""; };
 
@@ -99,19 +99,19 @@ function viewHome() {
 
 // Member home: member announcements, what's coming up, links, and the meeting notes officers tagged public.
 function viewMemberHome() {
-  const notes = state.notes.filter((n) => n.public).sort((a, b) => b.date.localeCompare(a.date));
+  const notes = [...state.publicNotes].sort((a, b) => b.date.localeCompare(a.date));
   return `<h1>Hi, ${esc(myName())} 👋</h1>
   <div class="grid cols-2" style="margin-top:12px">
     <div class="card"><h2>Announcements</h2>${annList(sortedAnns("members"))}</div>
     <div class="card"><h2>Coming up</h2>${C.calendarId ? `<iframe src="${calSrc("&mode=AGENDA&showNav=0&showDate=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0")}" style="height:320px" title="Coming up"></iframe><p class="muted"><a href="#calendar">See the full calendar</a></p>` : `<p class="empty">The calendar isn't connected yet.</p>`}</div>
     <div class="card"><h2>Links</h2>${linkButtons() || `<p class="empty">No links yet.</p>`}</div>
-    <div class="card"><h2>Meeting notes</h2><details><summary style="cursor:pointer">Show the list (${notes.length})</summary>${notes.length ? `<ul class="list">${notes.map(noteLi).join("")}</ul>` : `<p class="empty">No public notes yet.</p>`}</details></div>
+    <div class="card"><h2>Meeting notes</h2><details><summary style="cursor:pointer">Show the list (${notes.length})</summary>${notes.length ? `<ul class="list">${notes.map(pubNoteLi).join("")}</ul>` : `<p class="empty">No notes shared yet.</p>`}</details></div>
   </div>`;
 }
 
 function noteLi(n) {
   const pr = state.projects.find((p) => p.id === n.project);
-  return `<li><div class="row"><span><a target="_blank" rel="noopener" href="${url(n.url || n.slides)}"><strong>${esc(n.title)}</strong></a>${n.url && n.slides ? ` <a class="btn sm" target="_blank" rel="noopener" href="${url(n.slides)}">Slides</a>` : ""} ${chip(n.team)}${n.public ? ' <span class="chip" style="--c:#2f6b4f">public</span>' : ""}${pr ? `<span class="muted">· <a href="#projects/${esc(pr.id)}">${esc(projName(pr))}</a></span>` : ""}</span><span class="muted">${fmt(parse(n.date))} ${state.officer ? `<button class="btn sm" data-a="note-edit" data-id="${esc(n.id)}">Edit</button> <button class="btn sm" data-a="note-public" data-id="${esc(n.id)}" data-v="${n.public ? "1" : ""}">${n.public ? "Make private" : "Make public"}</button> ` : ""}${delBtn("notes", n.id)}</span></div></li>`;
+  return `<li><div class="row"><span><a target="_blank" rel="noopener" href="${url(n.url || n.slides)}"><strong>${esc(n.title)}</strong></a>${n.url && n.slides ? ` <a class="btn sm" target="_blank" rel="noopener" href="${url(n.slides)}">Slides</a>` : ""} ${chip(n.team)}${shareChip(n)}${pr ? `<span class="muted">· <a href="#projects/${esc(pr.id)}">${esc(projName(pr))}</a></span>` : ""}</span><span class="muted">${fmt(parse(n.date))} ${state.officer ? `<button class="btn sm" data-a="note-edit" data-id="${esc(n.id)}">Edit</button> ` : ""}${delBtn("notes", n.id)}</span></div></li>`;
 }
 
 function viewTeams(id) {
@@ -256,13 +256,37 @@ function viewRequests() {
   return `<h1>Requests</h1><p class="muted">${esc(C.turnaround)}</p><div class="grid cols-2">${C.forms.map((f) => `<div class="card"><h2>${esc(f.name)}</h2><p>${esc(f.desc)}</p><a class="btn pri" target="_blank" rel="noopener" href="${url(f.url)}">Open form</a>${f.embed ? `<iframe src="${url(f.embed)}" style="height:520px;margin-top:12px" title="${esc(f.name)}"></iframe>` : ""}</div>`).join("")}</div>`;
 }
 
-const noteFields = (v = {}) => [{ name: "title", label: "Title", required: true, ph: "Media sync", value: v.title }, { name: "date", label: "Meeting date", type: "date", required: true, value: v.date }, { name: "team", label: "Team", type: "select", options: teamOpts(true), value: v.team }, { name: "project", label: "Project (optional)", type: "select", value: v.project, options: [{ value: "", label: "—" }, ...state.projects.map((p) => ({ value: p.id, label: projName(p) }))] }, { name: "url", label: "Notes link (Google Doc). Optional if you add slides.", type: "url", value: v.url }, { name: "slides", label: "Slides link (Canva, Google Slides…). Optional if you add notes.", type: "url", value: v.slides }, { name: "public", label: "Public: members can see this note", type: "check", value: v.public }];
+const noteFields = (v = {}) => [{ name: "title", label: "Title", required: true, ph: "Media sync", value: v.title }, { name: "date", label: "Meeting date", type: "date", required: true, value: v.date }, { name: "team", label: "Team", type: "select", options: teamOpts(true), value: v.team }, { name: "project", label: "Project (optional)", type: "select", value: v.project, options: [{ value: "", label: "—" }, ...state.projects.map((p) => ({ value: p.id, label: projName(p) }))] }, { name: "url", label: "Notes link (Google Doc). Optional if you add slides.", type: "url", value: v.url }, { name: "slides", label: "Slides link (Canva, Google Slides…). Optional if you add notes.", type: "url", value: v.slides }, { name: "share", label: "Who can see this", type: "select", value: shareOf(v), options: [{ value: "officers", label: "Officers only" }, { value: "slides", label: "Members can see the slides link only" }, { value: "all", label: "Members can see the notes and slides links" }] }];
 
+// ---------- Meeting notes: who can see what ----------
+// Each note has a "share" setting: "officers" (only officers), "slides" (members see the slides link only), or "all"
+// (members see the notes and slides links). Older notes tagged public count as "all".
+// Members never read the notes themselves. They read publicNotes, a copy holding only what an officer chose to share.
+const shareOf = (n) => n.share || (n.public ? "all" : "officers");
+const SHARE_LABEL = { officers: ["officers only", "#555"], slides: ["members: slides", "#8b2a33"], all: ["members: notes + slides", "#2f6b4f"] };
+const shareChip = (n) => { const [t, c] = SHARE_LABEL[shareOf(n)]; return ` <span class="chip" style="--c:${c}">${t}</span>`; };
+const mirrorOf = (n) => {
+  const s = shareOf(n), url = s === "all" ? n.url || "" : "", slides = s === "officers" ? "" : n.slides || "";
+  return url || slides ? { title: n.title, date: n.date, team: n.team || "all", url, slides } : null;
+};
+const mirror = (id, n) => { const want = mirrorOf(n); return want ? fb.setItem("publicNotes", id, want) : fb.removeItem("publicNotes", id); };
+// Runs once per officer visit: makes the member copies match the notes (covers notes made before this existed).
+async function syncMirrors() {
+  const same = (a, b) => ["title", "date", "team", "url", "slides"].every((k) => (a[k] || "") === (b[k] || ""));
+  for (const n of state.notes) {
+    const want = mirrorOf(n), have = state.publicNotes.find((p) => p.id === n.id);
+    if (!want && have) await fb.removeItem("publicNotes", n.id);
+    else if (want && (!have || !same(have, want))) await fb.setItem("publicNotes", n.id, want);
+  }
+  for (const p of state.publicNotes) if (!state.notes.some((n) => n.id === p.id)) await fb.removeItem("publicNotes", p.id);
+}
 // Saves a meeting note. It needs a notes link or a slides link, at least one.
 const saveNote = (id) => async (v) => {
   if (!v.url && !v.slides) throw new Error("Add a notes link or a slides link.");
-  return id ? fb.updateItem("notes", id, v) : fb.addItem("notes", v);
+  if (id) await fb.updateItem("notes", id, v); else id = (await fb.addItem("notes", v)).id;
+  await mirror(id, v);
 };
+const pubNoteLi = (n) => `<li><div class="row"><span><a target="_blank" rel="noopener" href="${url(n.url || n.slides)}"><strong>${esc(n.title)}</strong></a>${n.url && n.slides ? ` <a class="btn sm" target="_blank" rel="noopener" href="${url(n.slides)}">Slides</a>` : ""} ${chip(n.team)}</span><span class="muted">${fmt(parse(n.date))}</span></div></li>`;
 
 // ---------- Google Drive ----------
 const drv = { stack: [{ id: drive.rootId(), name: drive.rootName() }], files: [], q: "", loading: false, error: "", need: true };
@@ -606,11 +630,15 @@ function renderNow() {
   const keep = document.activeElement?.id, dmv = $("#dmtext")?.value;
   $("#view").innerHTML = (views[r] || viewHome)();
   const u = unreadCount();
+  const navX = $("#nav").scrollLeft;
   $("#nav").innerHTML = ROUTES.filter(([k]) => state.officer ? (k !== "slack" || C.slack?.endpoint || !fb.configured) : MEMBER_TABS.includes(k)).map(([k, l]) => `<a href="#${k}" class="${k === r ? "on" : ""}">${l}${k === "messages" && u ? ` <span class="badge">${u}</span>` : ""}</a>`).join("");
+  $("#nav").scrollLeft = navX;
+  const onTab = $("#nav .on"); if (onTab && r !== renderNow.last) onTab.scrollIntoView({ inline: "center", block: "nearest" });
+  renderNow.last = r;
   if (dmv && $("#dmtext")) $("#dmtext").value = dmv;
   const th = $("#thread"); if (th) th.scrollTop = th.scrollHeight;
   if (keep && $("#" + keep)) { const el = $("#" + keep); el.focus?.(); if (el.setSelectionRange && el.type === "text") el.setSelectionRange(99, 99); }
-  $("#who").innerHTML = `<span class="muted">${esc(state.user.email)}${state.officer ? " · officer" : state.preview ? " · previewing the member view" : ""}</span>${state.canPreview ? `<button class="btn sm" id="pv">${state.preview ? "Back to officer view" : "Preview member view"}</button>` : ""}<button class="btn sm" id="out">Sign out</button>`;
+  $("#who").innerHTML = `<span class="muted who-email">${esc(state.user.email)}</span><span class="chip" style="--c:#10204a;margin:0">${state.officer ? "officer" : state.preview ? "member view" : "member"}</span>${state.canPreview ? `<button class="btn sm" id="pv" title="${state.preview ? "Go back to the officer view" : "See exactly what a member sees"}">${state.preview ? "Officer view" : "Member view"}</button>` : ""}<button class="btn sm" id="out">Sign out</button>`;
   if ($("#pv")) $("#pv").onclick = () => { state.preview = !state.preview; location.hash = "#home"; render(); };
   $("#out").onclick = async () => { await fb.signOutUser(); location.href = "index.html"; };
 }
@@ -642,14 +670,13 @@ document.addEventListener("click", async (e) => {
   if (a.startsWith("ppl-")) return peopleAction(a, b);
   if (a.startsWith("sms-")) return smsAction(a, b);
   if (a.startsWith("proj-")) return projAction(a, b);
-  if (a === "del" && confirm("Delete this item?")) await fb.removeItem(b.dataset.c, b.dataset.id);
+  if (a === "del" && confirm("Delete this item?")) { await fb.removeItem(b.dataset.c, b.dataset.id); if (b.dataset.c === "notes") await fb.removeItem("publicNotes", b.dataset.id).catch(() => {}); }
   if (a === "tog") {
     const p = state.projects.find((x) => x.id === b.dataset.id), i = Number(b.dataset.i), d = new Set(p.done || []);
     d.has(i) ? d.delete(i) : d.add(i); await fb.updateItem("projects", p.id, { done: [...d] });
   }
   if (a === "startEdit") openForm("Edit the Start here page", [{ name: "body", label: "Page text (## for a heading, - for a bullet)", type: "textarea", rows: 16, value: startBody() }], (v) => fb.setItem("pages", "start", { body: v.body }));
   if (a === "note-edit") { const n = state.notes.find((x) => x.id === b.dataset.id); if (n) openForm("Edit meeting notes", noteFields(n), saveNote(n.id)); }
-  if (a === "note-public") await fb.updateItem("notes", b.dataset.id, { public: !b.dataset.v });
   if (a === "addPubLink") openForm("Add a link for members", [{ name: "name", label: "Label", required: true, ph: "Join our Discord" }, { name: "url", label: "URL", type: "url", required: true }], (v) => fb.addItem("publicLinks", v));
   if (a === "addLink") openForm("Add a link", [{ name: "name", label: "Label", required: true, ph: "Trello board" }, { name: "url", label: "URL", type: "url", required: true }], (v) => fb.addItem("links", v));
   if (a === "addAnn") openForm(b.dataset.aud === "members" ? "New member announcement" : "New officer announcement", [{ name: "title", label: "Title", required: true }, { name: "body", label: "Details", type: "textarea" }, { name: "pinned", label: "Pin to top", type: "check" }, ...(C.slack?.endpoint || !fb.configured ? [{ name: "slack", label: "Also post to Slack", type: "check", value: true }] : [])], async (v) => {
@@ -708,14 +735,15 @@ fb.onAuth(async (user) => {
   state.canPreview = state.officer;
   if (state.officer) {
     fb.watchDMs(user.email.toLowerCase(), (d) => { state.messages = d; render(); });
-    for (const c of ["announcements", "projects", "notes", "links", "publicLinks", "pages"]) fb.watch(c, (d) => { state[c] = d; render(); });
+    const seen = new Set(), trySync = () => { if (seen.has("notes") && seen.has("publicNotes") && !state.mirrored) { state.mirrored = true; syncMirrors().catch((e) => console.error("notes sync", e)); } };
+    for (const c of ["announcements", "projects", "notes", "links", "publicLinks", "publicNotes", "pages"]) fb.watch(c, (d) => { state[c] = d; seen.add(c); render(); trySync(); });
     fb.watch("members", (d) => { state.members = d; rebuildDir(); render(); });
     fb.watch("officers", (d) => { state.officers = d; rebuildDir(); render(); });
     fb.watch("users", (d) => { state.signups = d; render(); });
     fb.watch("smsConsent", (d) => { state.smsList = d; render(); });
   } else { // members: only member announcements, notes tagged public, and the links list
     fb.watchWhere("announcements", "audience", "members", (d) => { state.announcements = d; render(); });
-    fb.watchWhere("notes", "public", true, (d) => { state.notes = d; render(); });
+    fb.watch("publicNotes", (d) => { state.publicNotes = d; render(); });
     fb.watch("publicLinks", (d) => { state.publicLinks = d; render(); });
   }
   render();
