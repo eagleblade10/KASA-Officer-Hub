@@ -18,7 +18,8 @@ if (configured) {
 const iso = (d) => { const x = new Date(); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
 const mem = {
   announcements: [
-    { id: "a1", title: "Welcome to the hub", body: "This is demo data. Connect Firebase (README) to make it real.", pinned: true, created: Date.now() },
+    { id: "a1", title: "Officers: welcome to the hub", body: "This is demo data. Connect Firebase (README) to make it real.", audience: "officers", pinned: true, created: Date.now() },
+    { id: "a2", title: "Fall Showcase tickets go on sale Friday", body: "Bring a friend! Details are in the links below.", audience: "members", pinned: true, created: Date.now() },
   ],
   projects: [
     { id: "p1", name: "Fall Showcase", owner: "events", needsFrom: ["media", "finance"], due: iso(30), trello: "", drive: "", done: [0] },
@@ -35,6 +36,11 @@ const mem = {
   ],
   members: [{ id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)" }],
   links: [],
+  publicLinks: [
+    { id: "l1", name: "Join our Discord", url: "#", created: 1 },
+    { id: "l2", name: "Membership dues", url: "#", created: 2 },
+    { id: "l3", name: "Instagram", url: "#", created: 3 },
+  ],
   pages: [],
   smsConsent: [
     { id: "jane@utexas.edu", email: "jane@utexas.edu", name: "Jane (demo)", phone: "+15125550123", consent: true, disclosure: "demo", consentedAt: new Date().toISOString() },
@@ -45,7 +51,7 @@ const mem = {
     { id: "m1", from: "jane@utexas.edu", to: "demo@example.com", participants: ["jane@utexas.edu", "demo@example.com"], text: "Hey! Can Media cover the showcase on the 21st?", created: Date.now() - 3600e3 },
   ],
   notes: [
-    { id: "n1", title: "General meeting", date: iso(-3), team: "all", project: "p4", url: "#" },
+    { id: "n1", title: "General meeting", date: iso(-3), team: "all", project: "p4", url: "#", public: true },
     { id: "n2", title: "Media sync", date: iso(-8), team: "media", project: "p1", url: "#" },
   ],
 };
@@ -58,6 +64,13 @@ export function watch(c, cb) {
   if (configured) return F.onSnapshot(F.collection(db, c), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => fail(c, e));
   (subs[c] = subs[c] || []).push(cb);
   cb([...mem[c]]);
+}
+// Like watch, but only documents where field == value. Members' lists use this: the rules only let them read what matches.
+export function watchWhere(c, field, value, cb) {
+  if (configured) return F.onSnapshot(F.query(F.collection(db, c), F.where(field, "==", value)), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => fail(c, e));
+  const f = (l) => cb(l.filter((i) => i[field] === value));
+  (subs[c] = subs[c] || []).push(f);
+  f([...mem[c]]);
 }
 export async function addItem(c, data) {
   if (configured) return F.addDoc(F.collection(db, c), { ...data, created: F.serverTimestamp() });
